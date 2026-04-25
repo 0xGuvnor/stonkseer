@@ -1,46 +1,19 @@
 import { v } from "convex/values"
 
 import { mutation, query } from "./_generated/server"
-import { getCurrentUserOrNull } from "./lib/auth"
+import { getCurrentUserOrNull, getOrCreateCurrentUser } from "./lib/auth"
 
 export const store = mutation({
-  args: {},
+  args: {
+    email: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    name: v.optional(v.string()),
+  },
   returns: v.id("users"),
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity()
+  handler: async (ctx, args) => {
+    const user = await getOrCreateCurrentUser(ctx, args)
 
-    if (!identity) {
-      throw new Error("Not authenticated")
-    }
-
-    const now = Date.now()
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_tokenIdentifier", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier),
-      )
-      .unique()
-
-    if (existingUser) {
-      await ctx.db.patch(existingUser._id, {
-        email: identity.email ?? existingUser.email,
-        name: identity.name ?? existingUser.name,
-        imageUrl: identity.pictureUrl ?? existingUser.imageUrl,
-        updatedAt: now,
-      })
-
-      return existingUser._id
-    }
-
-    return await ctx.db.insert("users", {
-      tokenIdentifier: identity.tokenIdentifier,
-      email: identity.email ?? "",
-      name: identity.name ?? "Stonkseer user",
-      imageUrl: identity.pictureUrl,
-      role: "user",
-      createdAt: now,
-      updatedAt: now,
-    })
+    return user._id
   },
 })
 

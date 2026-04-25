@@ -7,6 +7,7 @@ import {
   eventTypeValidator,
   expectedImpactValidator,
 } from "./schema"
+import { RESEARCH_STRATEGY_VERSION } from "../lib/research-strategy"
 
 const sourceInput = v.object({
   url: v.string(),
@@ -57,9 +58,11 @@ export const getRun = internalQuery({
       ),
       error: v.optional(v.string()),
       model: v.optional(v.string()),
+      researchStrategyVersion: v.optional(v.string()),
       costCents: v.optional(v.number()),
       attemptCount: v.number(),
       cacheHit: v.boolean(),
+      cacheSourceRunId: v.optional(v.id("researchRuns")),
       startedAt: v.number(),
       completedAt: v.optional(v.number()),
       createdAt: v.number(),
@@ -234,6 +237,7 @@ export const queueTrackedRefreshes = internalMutation({
         source: "refresh",
         symbol: trackedStock.symbol,
         status: "queued",
+      researchStrategyVersion: RESEARCH_STRATEGY_VERSION,
         attemptCount: 0,
         cacheHit: false,
         startedAt: args.now,

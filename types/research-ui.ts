@@ -5,15 +5,22 @@ export type EventSourceView = {
   url: string
   title: string
   publisher: string
+  publishedAt?: string
 }
 
 export type CatalystEventView = {
   _id: Id<"catalystEvents">
   title: string
   summary: string
+  whyItMatters: string
   eventType: string
+  expectedDate?: string
+  windowStart?: string
+  windowEnd?: string
+  datePrecision: string
   status: string
   confidence: number
+  expectedImpact: string
   sources: EventSourceView[]
 }
 
@@ -25,6 +32,9 @@ export type PortfolioView = {
 export type AnonymousResearchRunSuccess = {
   runId: Id<"researchRuns">
   anonymousTokenHash: string
+  status: string
+  cacheHit: boolean
+  remainingAnonymousRuns: number
 }
 
 export type AnonymousResearchRunError = {

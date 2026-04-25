@@ -91,7 +91,7 @@ export async function POST(request: Request) {
   const convex = new ConvexHttpClient(convexUrl)
 
   try {
-    const result = await convex.mutation(api.research.requestAnonymousRun, {
+    const result = await convex.action(api.researchActions.requestAnonymousRun, {
       symbol,
       anonymousTokenHash: hashValue(token),
       anonymousIpHash: hashValue(ipAddress),
@@ -113,14 +113,15 @@ export async function POST(request: Request) {
 
     return response
   } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unable to start anonymous research"
+    const status = message.includes("Ticker not found") ? 400 : 429
+
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to start anonymous research",
+        error: message,
       },
-      { status: 429 },
+      { status },
     )
   }
 }

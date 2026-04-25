@@ -2,10 +2,8 @@ import { Geist, Geist_Mono, Merriweather } from "next/font/google"
 import { ClerkProvider } from "@clerk/nextjs"
 
 import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
-import { AuthSync } from "@/components/auth-sync"
+import { AppProviders } from "@/components/providers/app-providers"
 import { cn } from "@/lib/utils"
-import { ConvexClientProvider } from "./convex-client-provider"
 
 const merriweatherHeading = Merriweather({
   subsets: ["latin"],
@@ -33,17 +31,12 @@ export default function RootLayout({
         fontMono.variable,
         "font-sans",
         geist.variable,
-        merriweatherHeading.variable,
+        merriweatherHeading.variable
       )}
     >
       <body>
         <ClerkProvider>
-          <ConvexClientProvider>
-            <ThemeProvider>
-              <AuthSync />
-              {children}
-            </ThemeProvider>
-          </ConvexClientProvider>
+          <AppProviders>{children}</AppProviders>
         </ClerkProvider>
       </body>
     </html>

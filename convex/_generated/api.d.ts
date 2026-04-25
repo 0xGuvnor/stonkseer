@@ -14,6 +14,7 @@ import type * as portfolios from "../portfolios.js";
 import type * as research from "../research.js";
 import type * as researchActions from "../researchActions.js";
 import type * as researchInternal from "../researchInternal.js";
+import type * as tickerValidation from "../tickerValidation.js";
 import type * as users from "../users.js";
 
 import type {
@@ -29,6 +30,7 @@ declare const fullApi: ApiFromModules<{
   research: typeof research;
   researchActions: typeof researchActions;
   researchInternal: typeof researchInternal;
+  tickerValidation: typeof tickerValidation;
   users: typeof users;
 }>;
 

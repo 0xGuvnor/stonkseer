@@ -1,7 +1,15 @@
 import { v } from "convex/values"
 
 import { mutation, query } from "./_generated/server"
-import { getCurrentUser, requirePortfolioOwner } from "./lib/auth"
+import {
+  getCurrentUserOrNull,
+  getOrCreateCurrentUser,
+  requirePortfolioOwner,
+} from "./lib/auth"
+import {
+  isTickerSymbolSyntaxValid,
+  normalizeTickerSymbol,
+} from "../lib/ticker-symbol"
 
 const portfolioReturn = v.object({
   _id: v.id("portfolios"),
@@ -31,7 +39,11 @@ export const listMine = query({
   args: {},
   returns: v.array(portfolioReturn),
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx)
+    const user = await getCurrentUserOrNull(ctx)
+
+    if (!user) {
+      return []
+    }
 
     return await ctx.db
       .query("portfolios")
@@ -46,7 +58,7 @@ export const create = mutation({
   },
   returns: v.id("portfolios"),
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx)
+    const user = await getOrCreateCurrentUser(ctx)
     const name = args.name.trim()
 
     if (name.length < 1 || name.length > 80) {
@@ -115,9 +127,9 @@ export const saveResearchToPortfolio = mutation({
       ctx,
       args.portfolioId,
     )
-    const symbol = args.symbol.trim().toUpperCase()
+    const symbol = normalizeTickerSymbol(args.symbol)
 
-    if (!/^[A-Z][A-Z0-9.-]{0,9}$/.test(symbol)) {
+    if (!isTickerSymbolSyntaxValid(symbol)) {
       throw new Error("Enter a valid ticker symbol")
     }
 
@@ -140,15 +152,38 @@ export const saveResearchToPortfolio = mutation({
       throw new Error("Unable to save stock")
     }
 
-    const portfolioStockId = await ctx.db.insert("portfolioStocks", {
-      portfolioId: portfolio._id,
-      userId: user._id,
-      stockId: stock._id,
-      symbol,
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
-    })
+    const existingPortfolioStocks = await ctx.db
+      .query("portfolioStocks")
+      .withIndex("by_portfolio_and_symbol", (q) =>
+        q.eq("portfolioId", portfolio._id).eq("symbol", symbol),
+      )
+      .take(1)
+    let portfolioStock = existingPortfolioStocks[0]
+
+    if (portfolioStock) {
+      await ctx.db.patch(portfolioStock._id, {
+        stockId: stock._id,
+        status: "active",
+        updatedAt: now,
+      })
+    } else {
+      const portfolioStockId = await ctx.db.insert("portfolioStocks", {
+        portfolioId: portfolio._id,
+        userId: user._id,
+        stockId: stock._id,
+        symbol,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      })
+      const insertedPortfolioStock = await ctx.db.get(portfolioStockId)
+
+      if (!insertedPortfolioStock) {
+        throw new Error("Unable to save portfolio stock")
+      }
+
+      portfolioStock = insertedPortfolioStock
+    }
 
     const trackedEventIds = []
 
@@ -159,10 +194,23 @@ export const saveResearchToPortfolio = mutation({
         throw new Error("Selected event does not match this ticker")
       }
 
+      const existingTrackedEvents = await ctx.db
+        .query("trackedEvents")
+        .withIndex("by_portfolio_and_event", (q) =>
+          q.eq("portfolioId", portfolio._id).eq("eventId", eventId),
+        )
+        .take(1)
+      const existingTrackedEvent = existingTrackedEvents[0]
+
+      if (existingTrackedEvent) {
+        trackedEventIds.push(existingTrackedEvent._id)
+        continue
+      }
+
       const trackedEventId = await ctx.db.insert("trackedEvents", {
         userId: user._id,
         portfolioId: portfolio._id,
-        portfolioStockId,
+        portfolioStockId: portfolioStock._id,
         eventId,
         notificationPreference: "none",
         createdAt: now,
@@ -170,6 +218,6 @@ export const saveResearchToPortfolio = mutation({
       trackedEventIds.push(trackedEventId)
     }
 
-    return { portfolioStockId, trackedEventIds }
+    return { portfolioStockId: portfolioStock._id, trackedEventIds }
   },
 })

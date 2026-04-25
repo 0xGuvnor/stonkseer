@@ -7,6 +7,9 @@ export const eventTypeValidator = v.union(
   v.literal("regulatory"),
   v.literal("launch"),
   v.literal("investor_day"),
+  v.literal("conference"),
+  v.literal("partnership"),
+  v.literal("corporate"),
   v.literal("macro"),
   v.literal("legal"),
   v.literal("other"),
@@ -72,6 +75,17 @@ export default defineSchema({
     .index("by_symbol", ["symbol"])
     .index("by_lastRefreshedAt", ["lastRefreshedAt"]),
 
+  tickerValidations: defineTable({
+    symbol: v.string(),
+    isValid: v.boolean(),
+    companyName: v.optional(v.string()),
+    exchange: v.optional(v.string()),
+    provider: v.string(),
+    validatedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_symbol", ["symbol"]),
+
   portfolioStocks: defineTable({
     portfolioId: v.id("portfolios"),
     userId: v.id("users"),
@@ -84,7 +98,8 @@ export default defineSchema({
     .index("by_portfolio", ["portfolioId"])
     .index("by_user", ["userId"])
     .index("by_symbol", ["symbol"])
-    .index("by_user_and_symbol", ["userId", "symbol"]),
+    .index("by_user_and_symbol", ["userId", "symbol"])
+    .index("by_portfolio_and_symbol", ["portfolioId", "symbol"]),
 
   researchRuns: defineTable({
     userId: v.optional(v.id("users")),
@@ -99,9 +114,11 @@ export default defineSchema({
     status: researchStatusValidator,
     error: v.optional(v.string()),
     model: v.optional(v.string()),
+    researchStrategyVersion: v.optional(v.string()),
     costCents: v.optional(v.number()),
     attemptCount: v.number(),
     cacheHit: v.boolean(),
+    cacheSourceRunId: v.optional(v.id("researchRuns")),
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
     createdAt: v.number(),
@@ -179,5 +196,6 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_portfolio", ["portfolioId"])
     .index("by_event", ["eventId"])
-    .index("by_user_and_event", ["userId", "eventId"]),
+    .index("by_user_and_event", ["userId", "eventId"])
+    .index("by_portfolio_and_event", ["portfolioId", "eventId"]),
 })

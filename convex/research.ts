@@ -2,7 +2,7 @@ import { v } from "convex/values"
 
 import { internal } from "./_generated/api"
 import type { Id } from "./_generated/dataModel"
-import { mutation, query } from "./_generated/server"
+import { internalMutation, query } from "./_generated/server"
 import type { MutationCtx } from "./_generated/server"
 import {
   catalystStatusValidator,
@@ -11,7 +11,16 @@ import {
   expectedImpactValidator,
   researchStatusValidator,
 } from "./schema"
-import { getCurrentUser, getCurrentUserOrNull } from "./lib/auth"
+import {
+  getCurrentUser,
+  getCurrentUserOrNull,
+  getOrCreateCurrentUser,
+} from "./lib/auth"
+import {
+  isTickerSymbolSyntaxValid,
+  normalizeTickerSymbol,
+} from "../lib/ticker-symbol"
+import { RESEARCH_STRATEGY_VERSION } from "../lib/research-strategy"
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
 const AUTHENTICATED_DAILY_RUN_LIMIT = 10
@@ -35,9 +44,11 @@ const researchRunReturn = v.object({
   status: researchStatusValidator,
   error: v.optional(v.string()),
   model: v.optional(v.string()),
+  researchStrategyVersion: v.optional(v.string()),
   costCents: v.optional(v.number()),
   attemptCount: v.number(),
   cacheHit: v.boolean(),
+  cacheSourceRunId: v.optional(v.id("researchRuns")),
   startedAt: v.number(),
   completedAt: v.optional(v.number()),
   createdAt: v.number(),
@@ -81,10 +92,6 @@ const eventWithSourcesReturn = v.object({
   sources: v.array(sourceReturn),
 })
 
-function normalizeSymbol(symbol: string) {
-  return symbol.trim().toUpperCase()
-}
-
 async function assertAuthenticatedBudget(
   ctx: MutationCtx,
   userId: Id<"users">,
@@ -111,16 +118,16 @@ async function assertAuthenticatedBudget(
 }
 
 function assertValidSymbol(symbol: string) {
-  if (!/^[A-Z][A-Z0-9.-]{0,9}$/.test(symbol)) {
+  if (!isTickerSymbolSyntaxValid(symbol)) {
     throw new Error("Enter a valid ticker symbol")
   }
 }
 
-async function hasFreshCompletedRun(
+async function getFreshCompletedRunId(
   ctx: MutationCtx,
   symbol: string,
   now: number,
-) {
+): Promise<Id<"researchRuns"> | null> {
   const runs = await ctx.db
     .query("researchRuns")
     .withIndex("by_symbol_and_status", (q) =>
@@ -128,12 +135,52 @@ async function hasFreshCompletedRun(
     )
     .collect()
 
-  return runs.some(
-    (run) => run.completedAt !== undefined && run.completedAt > now - ONE_DAY_MS,
-  )
+  const freshRuns = runs
+    .filter(
+      (run) =>
+        run.completedAt !== undefined &&
+        run.completedAt > now - ONE_DAY_MS &&
+        run.researchStrategyVersion === RESEARCH_STRATEGY_VERSION,
+    )
+    .sort(
+      (a, b) =>
+        (b.completedAt ?? b.createdAt) - (a.completedAt ?? a.createdAt),
+    )
+
+  return freshRuns[0]?._id ?? null
 }
 
-export const requestAuthenticatedRun = mutation({
+async function listEventsForRun(ctx: MutationCtx, runId: Id<"researchRuns">) {
+  return await ctx.db
+    .query("catalystEvents")
+    .withIndex("by_sourceRun", (q) => q.eq("sourceRunId", runId))
+    .take(1)
+}
+
+async function isUsableCacheRun(
+  ctx: MutationCtx,
+  runId: Id<"researchRuns"> | null,
+) {
+  if (!runId) {
+    return false
+  }
+
+  const events = await listEventsForRun(ctx, runId)
+
+  return events.length > 0
+}
+
+async function getUsableFreshCompletedRunId(
+  ctx: MutationCtx,
+  symbol: string,
+  now: number,
+) {
+  const runId = await getFreshCompletedRunId(ctx, symbol, now)
+
+  return (await isUsableCacheRun(ctx, runId)) ? runId : null
+}
+
+export const requestAuthenticatedRun = internalMutation({
   args: {
     symbol: symbolValidator,
     now: v.number(),
@@ -144,11 +191,16 @@ export const requestAuthenticatedRun = mutation({
     cacheHit: v.boolean(),
   }),
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx)
-    const symbol = normalizeSymbol(args.symbol)
+    const user = await getOrCreateCurrentUser(ctx)
+    const symbol = normalizeTickerSymbol(args.symbol)
     assertValidSymbol(symbol)
 
-    const cacheHit = await hasFreshCompletedRun(ctx, symbol, args.now)
+    const cacheSourceRunId = await getUsableFreshCompletedRunId(
+      ctx,
+      symbol,
+      args.now,
+    )
+    const cacheHit = cacheSourceRunId !== null
     if (!cacheHit) {
       await assertAuthenticatedBudget(ctx, user._id, args.now)
     }
@@ -159,6 +211,8 @@ export const requestAuthenticatedRun = mutation({
       symbol,
       status: cacheHit ? "completed" : "queued",
       cacheHit,
+      cacheSourceRunId: cacheSourceRunId ?? undefined,
+      researchStrategyVersion: RESEARCH_STRATEGY_VERSION,
       attemptCount: 0,
       startedAt: args.now,
       completedAt: cacheHit ? args.now : undefined,
@@ -178,7 +232,7 @@ export const requestAuthenticatedRun = mutation({
   },
 })
 
-export const requestAnonymousRun = mutation({
+export const requestAnonymousRun = internalMutation({
   args: {
     symbol: symbolValidator,
     anonymousTokenHash: v.string(),
@@ -193,10 +247,15 @@ export const requestAnonymousRun = mutation({
     remainingAnonymousRuns: v.number(),
   }),
   handler: async (ctx, args) => {
-    const symbol = normalizeSymbol(args.symbol)
+    const symbol = normalizeTickerSymbol(args.symbol)
     assertValidSymbol(symbol)
 
-    const cacheHit = await hasFreshCompletedRun(ctx, symbol, args.now)
+    const cacheSourceRunId = await getUsableFreshCompletedRunId(
+      ctx,
+      symbol,
+      args.now,
+    )
+    const cacheHit = cacheSourceRunId !== null
 
     if (!cacheHit) {
       const ipUsage = await ctx.db
@@ -239,6 +298,8 @@ export const requestAnonymousRun = mutation({
       symbol,
       status: cacheHit ? "completed" : "queued",
       cacheHit,
+      cacheSourceRunId: cacheSourceRunId ?? undefined,
+      researchStrategyVersion: RESEARCH_STRATEGY_VERSION,
       attemptCount: 0,
       startedAt: args.now,
       completedAt: cacheHit ? args.now : undefined,
@@ -297,10 +358,12 @@ export const getRunResults = query({
       .withIndex("by_sourceRun", (q) => q.eq("sourceRunId", run._id))
       .collect()
 
-    if (events.length === 0 && run.cacheHit) {
+    if (events.length === 0 && run.cacheHit && run.cacheSourceRunId) {
       events = await ctx.db
         .query("catalystEvents")
-        .withIndex("by_symbol", (q) => q.eq("symbol", run.symbol))
+        .withIndex("by_sourceRun", (q) =>
+          q.eq("sourceRunId", run.cacheSourceRunId),
+        )
         .collect()
     }
 
