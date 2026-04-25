@@ -1,12 +1,18 @@
 import { Geist, Geist_Mono, Merriweather } from "next/font/google"
+import { ClerkProvider } from "@clerk/nextjs"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
-import { cn } from "@/lib/utils";
+import { AuthSync } from "@/components/auth-sync"
+import { cn } from "@/lib/utils"
+import { ConvexClientProvider } from "./convex-client-provider"
 
-const merriweatherHeading = Merriweather({subsets:['latin'],variable:'--font-heading'});
+const merriweatherHeading = Merriweather({
+  subsets: ["latin"],
+  variable: "--font-heading",
+})
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'})
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" })
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -22,10 +28,23 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", geist.variable, merriweatherHeading.variable)}
+      className={cn(
+        "antialiased",
+        fontMono.variable,
+        "font-sans",
+        geist.variable,
+        merriweatherHeading.variable,
+      )}
     >
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ClerkProvider>
+          <ConvexClientProvider>
+            <ThemeProvider>
+              <AuthSync />
+              {children}
+            </ThemeProvider>
+          </ConvexClientProvider>
+        </ClerkProvider>
       </body>
     </html>
   )
