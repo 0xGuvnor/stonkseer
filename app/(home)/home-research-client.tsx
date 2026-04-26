@@ -394,15 +394,15 @@ export function HomeResearchClient() {
                         )}
                       </TableCell>
                       <TableCell
-                        className="max-w-[14rem] align-top whitespace-normal text-muted-foreground"
+                        className="max-w-56 align-top whitespace-normal text-muted-foreground"
                         title={eventTimingLabel(event)}
                       >
                         {eventTimingLabel(event)}
                       </TableCell>
-                      <TableCell className="max-w-[10rem] align-top whitespace-normal">
+                      <TableCell className="max-w-40 align-top whitespace-normal">
                         {event.eventType}
                       </TableCell>
-                      <TableCell className="max-w-[10rem] align-top whitespace-normal text-muted-foreground">
+                      <TableCell className="max-w-40 align-top whitespace-normal text-muted-foreground">
                         {event.status}
                       </TableCell>
                       <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
