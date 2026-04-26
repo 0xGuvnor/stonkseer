@@ -131,6 +131,41 @@ export default defineSchema({
     .index("by_user_and_status", ["userId", "status"])
     .index("by_symbol_and_status", ["symbol", "status"]),
 
+  researchDiagnostics: defineTable({
+    runId: v.id("researchRuns"),
+    symbol: v.string(),
+    strategyVersion: v.string(),
+    searchQueryCount: v.number(),
+    snippetCount: v.number(),
+    candidateCount: v.number(),
+    extractionEventCount: v.number(),
+    queries: v.array(
+      v.object({
+        bucket: v.string(),
+        query: v.string(),
+        includeDomains: v.optional(v.array(v.string())),
+        maxResults: v.optional(v.number()),
+        topic: v.optional(v.union(v.literal("finance"), v.literal("general"))),
+        resultCount: v.number(),
+        keptCount: v.number(),
+        urls: v.array(v.string()),
+        error: v.optional(v.string()),
+      }),
+    ),
+    candidates: v.array(
+      v.object({
+        label: v.string(),
+        category: v.string(),
+        score: v.number(),
+        reason: v.string(),
+        sourceUrls: v.array(v.string()),
+      }),
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_run", ["runId"])
+    .index("by_symbol", ["symbol"]),
+
   anonymousUsage: defineTable({
     dayKey: v.string(),
     ipHash: v.string(),

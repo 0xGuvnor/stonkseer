@@ -1,1 +1,1 @@
-export const RESEARCH_STRATEGY_VERSION = "holistic-search-v3"
+export const RESEARCH_STRATEGY_VERSION = "balanced-discovery-v4"

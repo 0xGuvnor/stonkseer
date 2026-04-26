@@ -1,7 +1,7 @@
 ## Learned User Preferences
 
 - For UI, **default to shadcn/ui**: look under `components/ui/` for the primitive; if it is not installed yet, add it with `bunx shadcn@latest add <component>` (then compose from it) instead of hand-rolling tables, dialogs, forms, etc., unless the user explicitly asks for a custom implementation.
-- For catalyst research, avoid hardcoded ticker/company-specific event maps; use general discovery patterns that can surface branded or recurring events for any proper company.
+- For catalyst research, avoid hardcoded ticker/company-specific event maps; use general discovery patterns that can surface branded, recurring, or sector-relevant events (e.g. conferences, regulatory approvals) for any proper company.
 - When debugging missing catalyst results, do not attribute first-run misses to cache without evidence; treat them as retrieval or extraction quality issues first.
 
 ## Learned Workspace Facts
@@ -12,7 +12,7 @@
 - The MVP intentionally allows one anonymous ticker research trial before sign-in; saving to a portfolio requires Google sign-in.
 - Anonymous research protection uses layered controls: deterministic ticker normalization/validation, hashed IP bucket, signed browser token, cache reuse, lower-cost research limits, and invalid tickers must not consume the anonymous trial.
 - The anonymous research endpoint is a Next.js Route Handler because it needs request headers, IP-derived signals, and HTTP-only cookie handling; authenticated portfolio saves should use Convex mutations.
-- Research runs in Convex actions: validate tickers deterministically using Finnhub market data when `FINNHUB_API_KEY` is set, gather Tavily web snippets when `TAVILY_API_KEY` is set, use the Vercel AI SDK for structured extraction, support scheduled refresh/cache TTLs, and keep provider/model keys (including AI gateway) in Convex deployment env—not only in Next.js `.env.local`.
+- Research runs in Convex actions: validate tickers deterministically using Finnhub market data when `FINNHUB_API_KEY` is set, merge Finnhub snippets with web snippets from Tavily when `TAVILY_API_KEY` is set and/or from hosted Gemini grounded search when `CATALYST_HOSTED_SEARCH_PROVIDER` is `gemini` (requires `GEMINI_API_KEY`), use the Vercel AI SDK for structured extraction, support scheduled refresh/cache TTLs, and keep provider/model keys (including AI gateway) in Convex deployment env—not only in Next.js `.env.local`.
 - The GitHub repository is `https://github.com/0xGuvnor/stonkseer`, with `master` tracking `origin/master`; the connected Vercel project is `0xguvnors-projects/stonkseer` at `https://stonkseer.vercel.app`.
 - The Clerk JWT issuer for Convex belongs in Convex deployment environment variables, while Clerk frontend/server keys belong in local Next.js/Vercel environment variables; if real Clerk keys are set, keyless `.clerk/` fallback is not required and generated `.clerk/` content stays out of git.
 - The Convex dashboard project is named `stonkseer`, and the local CLI has been connected to it.

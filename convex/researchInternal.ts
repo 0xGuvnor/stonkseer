@@ -33,6 +33,26 @@ const eventInput = v.object({
   sources: v.array(sourceInput),
 })
 
+const searchDiagnosticInput = v.object({
+  bucket: v.string(),
+  query: v.string(),
+  includeDomains: v.optional(v.array(v.string())),
+  maxResults: v.optional(v.number()),
+  topic: v.optional(v.union(v.literal("finance"), v.literal("general"))),
+  resultCount: v.number(),
+  keptCount: v.number(),
+  urls: v.array(v.string()),
+  error: v.optional(v.string()),
+})
+
+const candidateDiagnosticInput = v.object({
+  label: v.string(),
+  category: v.string(),
+  score: v.number(),
+  reason: v.string(),
+  sourceUrls: v.array(v.string()),
+})
+
 export const getRun = internalQuery({
   args: {
     runId: v.id("researchRuns"),
@@ -72,6 +92,36 @@ export const getRun = internalQuery({
   ),
   handler: async (ctx, args) => {
     return await ctx.db.get(args.runId)
+  },
+})
+
+export const recordResearchDiagnostics = internalMutation({
+  args: {
+    runId: v.id("researchRuns"),
+    symbol: v.string(),
+    searchQueryCount: v.number(),
+    snippetCount: v.number(),
+    candidateCount: v.number(),
+    extractionEventCount: v.number(),
+    queries: v.array(searchDiagnosticInput),
+    candidates: v.array(candidateDiagnosticInput),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.insert("researchDiagnostics", {
+      runId: args.runId,
+      symbol: args.symbol,
+      strategyVersion: RESEARCH_STRATEGY_VERSION,
+      searchQueryCount: args.searchQueryCount,
+      snippetCount: args.snippetCount,
+      candidateCount: args.candidateCount,
+      extractionEventCount: args.extractionEventCount,
+      queries: args.queries,
+      candidates: args.candidates,
+      createdAt: Date.now(),
+    })
+
+    return null
   },
 })
 

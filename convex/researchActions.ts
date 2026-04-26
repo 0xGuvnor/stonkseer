@@ -15,6 +15,17 @@ import {
   type CatalystResearch,
 } from "../lib/research-contract"
 import {
+  buildResearchCandidates,
+  buildSearchQueries,
+  compactWhitespace,
+  diversifySnippetsByDomain,
+  selectBalancedSearchPlan,
+  type ResearchCandidate,
+  type SearchQuery,
+  type SearchQueryDiagnostic,
+  type SourceSnippet,
+} from "../lib/research-discovery"
+import {
   isTickerSymbolSyntaxValid,
   normalizeTickerSymbol,
 } from "../lib/ticker-symbol"
@@ -45,7 +56,9 @@ const finnhubQuoteSchema = z
 const finnhubStockEarningsRowSchema = z.record(z.string(), z.unknown())
 
 const MAX_RESEARCH_ATTEMPTS = 2
-const MAX_WEB_SNIPPETS = 28
+const MAX_WEB_SNIPPETS = 36
+const ANONYMOUS_WEB_QUERY_BUDGET = 10
+const MAX_DIAGNOSTIC_URLS_PER_QUERY = 6
 const WEB_SNIPPET_QUOTE_LENGTH = 1200
 const TICKER_VALIDATION_PROVIDER = "finnhub-profile2+quote+earnings"
 const VALID_TICKER_VALIDATION_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -65,23 +78,42 @@ const tavilySearchSchema = z.object({
     .optional(),
 })
 
-type TavilyTopic = "finance" | "general"
-
-type SearchQuery = {
-  query: string
-  includeDomains?: string[]
-  maxResults?: number
-  /** Tavily topic; default finance when omitted. */
-  topic?: TavilyTopic
-}
-
-type SourceSnippet = {
-  url: string
-  title: string
-  publisher: string
-  quote: string
-  publishedAt?: string
-}
+const geminiGroundedSearchSchema = z.object({
+  candidates: z
+    .array(
+      z.object({
+        content: z
+          .object({
+            parts: z
+              .array(
+                z.object({
+                  text: z.string().optional(),
+                }),
+              )
+              .optional(),
+          })
+          .optional(),
+        groundingMetadata: z
+          .object({
+            groundingChunks: z
+              .array(
+                z.object({
+                  web: z
+                    .object({
+                      uri: z.string().optional(),
+                      title: z.string().optional(),
+                    })
+                    .optional(),
+                }),
+              )
+              .optional(),
+            webSearchQueries: z.array(z.string()).optional(),
+          })
+          .optional(),
+      }),
+    )
+    .optional(),
+})
 
 type TickerValidation = {
   isValid: boolean
@@ -114,28 +146,6 @@ const anonymousRequestRunReturn = v.object({
   remainingAnonymousRuns: v.number(),
 })
 
-function cleanCompanyName(companyName?: string) {
-  return companyName
-    ?.replace(
-      /\b(incorporated|inc\.?|corporation|corp\.?|limited|ltd\.?|plc|holdings?|class [a-z]|common stock|ordinary shares)\b/gi,
-      "",
-    )
-    .replace(/\s+/g, " ")
-    .trim()
-}
-
-function hostnameFromUrl(value?: string) {
-  if (!value) {
-    return undefined
-  }
-
-  try {
-    return new URL(value).hostname.replace(/^www\./, "")
-  } catch {
-    return undefined
-  }
-}
-
 function normalizeSourceUrl(value: string) {
   try {
     const url = new URL(value)
@@ -145,243 +155,6 @@ function normalizeSourceUrl(value: string) {
   } catch {
     return value
   }
-}
-
-function compactWhitespace(value: string) {
-  return value.replace(/\s+/g, " ").trim()
-}
-
-function snippetHostname(snippet: SourceSnippet): string {
-  try {
-    return new URL(snippet.url).hostname.replace(/^www\./, "")
-  } catch {
-    return snippet.publisher.replace(/^www\./, "")
-  }
-}
-
-/** Prefer breadth of publishers when we have more URLs than the model budget. */
-function diversifySnippetsByDomain(
-  snippets: SourceSnippet[],
-  max: number,
-): SourceSnippet[] {
-  if (snippets.length <= max) {
-    return snippets
-  }
-
-  const byHost = new Map<string, SourceSnippet[]>()
-  const hostOrder: string[] = []
-
-  for (const snippet of snippets) {
-    const host = snippetHostname(snippet)
-    if (!byHost.has(host)) {
-      hostOrder.push(host)
-      byHost.set(host, [])
-    }
-    byHost.get(host)!.push(snippet)
-  }
-
-  const result: SourceSnippet[] = []
-  while (result.length < max) {
-    let progressed = false
-    for (const host of hostOrder) {
-      const bucket = byHost.get(host)
-      if (bucket && bucket.length > 0) {
-        const next = bucket.shift()
-        if (next) {
-          result.push(next)
-          progressed = true
-          if (result.length >= max) {
-            break
-          }
-        }
-      }
-    }
-    if (!progressed) {
-      break
-    }
-  }
-
-  return result
-}
-
-function industryTailQueries(
-  companyLabel: string,
-  yearWindow: string,
-  industry?: string,
-): SearchQuery[] {
-  const i = industry?.toLowerCase() ?? ""
-  const out: SearchQuery[] = []
-
-  if (/(bio|pharma|health|drug|medical|therap|genetic|clinical|diagnostic)/.test(i)) {
-    out.push({
-      query: `${companyLabel} FDA PDUFA advisory committee clinical trial readout topline data ${yearWindow}`,
-      maxResults: 6,
-      topic: "general",
-    })
-  }
-
-  if (/(software|technology|semi|internet|hardware|cloud|saas|it services)/.test(i)) {
-    out.push({
-      query: `${companyLabel} developer conference platform roadmap enterprise customer momentum ${yearWindow}`,
-      maxResults: 5,
-      topic: "general",
-    })
-  }
-
-  if (/(bank|financial|insurance|capital|credit|reit|asset management)/.test(i)) {
-    out.push({
-      query: `${companyLabel} investor conference banking forum CCAR stress test financial forum ${yearWindow}`,
-      maxResults: 5,
-      topic: "finance",
-    })
-  }
-
-  if (/(energy|oil|gas|solar|mining|utility|power)/.test(i)) {
-    out.push({
-      query: `${companyLabel} production guidance capacity project commissioning FID sanction ${yearWindow}`,
-      maxResults: 5,
-      topic: "general",
-    })
-  }
-
-  return out
-}
-
-function recurringEventDiscoveryQueries(
-  companyLabel: string,
-  officialDomain: string | undefined,
-  yearWindow: string,
-): SearchQuery[] {
-  const officialDomains = officialDomain ? [officialDomain] : undefined
-
-  return [
-    {
-      query: `${companyLabel} annual developer conference keynote product announcements ${yearWindow}`,
-      includeDomains: officialDomains,
-      maxResults: 8,
-      topic: "general",
-    },
-    {
-      query: `${companyLabel} annual customer conference user conference summit keynote product announcements ${yearWindow}`,
-      includeDomains: officialDomains,
-      maxResults: 8,
-      topic: "general",
-    },
-    {
-      query: `${companyLabel} official event keynote product launch announcements ${yearWindow}`,
-      includeDomains: officialDomains,
-      maxResults: 8,
-      topic: "general",
-    },
-    {
-      query: `${companyLabel} recurring annual event conference keynote launch roadmap ${yearWindow}`,
-      maxResults: 8,
-      topic: "general",
-    },
-  ]
-}
-
-function buildSearchQueries(
-  symbol: string,
-  companyName: string | undefined,
-  companyWebsite: string | undefined,
-  now: number,
-  industry?: string,
-): SearchQuery[] {
-  const currentYear = new Date(now).getUTCFullYear()
-  const nextYear = currentYear + 1
-  const shortCompanyName = cleanCompanyName(companyName)
-  const companyLabel = shortCompanyName
-    ? `${shortCompanyName} ${symbol}`
-    : symbol
-  const officialDomain = hostnameFromUrl(companyWebsite)
-  const yearWindow = `${currentYear} ${nextYear}`
-  const queries: SearchQuery[] = [
-    {
-      query: `${companyLabel} upcoming catalysts milestones next 12 months ${yearWindow}`,
-      maxResults: 6,
-    },
-    {
-      query: `${companyLabel} investor relations calendar annual meeting shareholder meeting earnings call investor day ${yearWindow}`,
-      maxResults: 6,
-    },
-    {
-      query: `${companyLabel} corporate presentation conference webcast fireside chat speaking slot investor conference ${yearWindow}`,
-      maxResults: 6,
-      topic: "general",
-    },
-    {
-      query: `${companyLabel} trade show user conference summit keynote booth exhibition ${yearWindow}`,
-      maxResults: 5,
-      topic: "general",
-    },
-    {
-      query: `${companyLabel} strategic partnership collaboration joint venture OEM supply agreement customer win ${yearWindow}`,
-      maxResults: 5,
-      topic: "general",
-    },
-    {
-      query: `${companyLabel} Form 8-K material definitive agreement press release exhibit future ${yearWindow}`,
-      includeDomains: ["sec.gov"],
-      maxResults: 6,
-      topic: "general",
-    },
-    {
-      query: `${companyLabel} ${symbol} merger acquisition spin-off restructuring shareholder vote proxy ${yearWindow}`,
-      includeDomains: ["sec.gov"],
-      maxResults: 5,
-      topic: "general",
-    },
-    {
-      query: `${companyLabel} product roadmap launch production ramp capacity expansion commercialization ${yearWindow}`,
-      maxResults: 6,
-    },
-    {
-      query: `${companyLabel} regulatory approval rollout geographic expansion legal decision trial data ${yearWindow}`,
-      maxResults: 6,
-    },
-    {
-      query: `${companyLabel} management guidance capex targets production deliveries milestones ${yearWindow}`,
-      maxResults: 6,
-    },
-    {
-      query: `${companyLabel} SEC 10-K 10-Q earnings transcript future plans milestones ${yearWindow}`,
-      maxResults: 5,
-    },
-    {
-      query: `${companyLabel} analyst day investor presentation roadmap ${yearWindow}`,
-      maxResults: 5,
-    },
-    {
-      query: `${companyLabel} news upcoming event milestone catalyst ${yearWindow}`,
-      maxResults: 5,
-    },
-  ]
-
-  if (officialDomain) {
-    queries.unshift(
-      {
-        query: `${companyLabel} official investor relations events calendar milestones ${yearWindow}`,
-        includeDomains: [officialDomain],
-        maxResults: 5,
-      },
-      {
-        query: `${companyLabel} official newsroom product launch production regulatory update ${yearWindow}`,
-        includeDomains: [officialDomain],
-        maxResults: 5,
-      },
-    )
-  }
-
-  return [
-    ...recurringEventDiscoveryQueries(companyLabel, officialDomain, yearWindow),
-    ...queries,
-    ...industryTailQueries(companyLabel, yearWindow, industry),
-    {
-      query: `${symbol} $${symbol} upcoming catalysts next 12 months ${yearWindow}`,
-      maxResults: 4,
-    },
-  ]
 }
 
 function formatFinnhubEarningsRow(row: Record<string, unknown>) {
@@ -622,23 +395,27 @@ async function fetchWebSearchSnippets(
   companyName: string | undefined,
   companyWebsite: string | undefined,
   now: number,
-  maxQueries: number,
+  selectedPlan: SearchQuery[],
   queryPlan?: SearchQuery[],
-): Promise<SourceSnippet[]> {
+): Promise<{
+  snippets: SourceSnippet[]
+  diagnostics: SearchQueryDiagnostic[]
+}> {
   const apiKey = process.env.TAVILY_API_KEY
 
   if (!apiKey) {
-    return []
+    return { snippets: [], diagnostics: [] }
   }
 
   const snippets: SourceSnippet[] = []
   const seenUrls = new Set<string>()
+  const diagnostics: SearchQueryDiagnostic[] = []
 
   const plan =
     queryPlan ??
     buildSearchQueries(symbol, companyName, companyWebsite, now, undefined)
 
-  for (const searchQuery of plan.slice(0, maxQueries)) {
+  for (const searchQuery of selectedPlan.length > 0 ? selectedPlan : plan) {
     let response: Response
 
     try {
@@ -664,6 +441,17 @@ async function fetchWebSearchSnippets(
         body: JSON.stringify(body),
       })
     } catch (err) {
+      diagnostics.push({
+        bucket: searchQuery.bucket,
+        query: searchQuery.query,
+        includeDomains: searchQuery.includeDomains,
+        maxResults: searchQuery.maxResults,
+        topic: searchQuery.topic,
+        resultCount: 0,
+        keptCount: 0,
+        urls: [],
+        error: err instanceof Error ? err.message : String(err),
+      })
       console.warn("[tavily] fetch_error", {
         symbol,
         message: err instanceof Error ? err.message : String(err),
@@ -679,6 +467,17 @@ async function fetchWebSearchSnippets(
       } catch {
         /* ignore */
       }
+      diagnostics.push({
+        bucket: searchQuery.bucket,
+        query: searchQuery.query,
+        includeDomains: searchQuery.includeDomains,
+        maxResults: searchQuery.maxResults,
+        topic: searchQuery.topic,
+        resultCount: 0,
+        keptCount: 0,
+        urls: [],
+        error: `HTTP ${response.status}`,
+      })
       console.warn("[tavily] http_error", {
         symbol,
         status: response.status,
@@ -692,6 +491,17 @@ async function fetchWebSearchSnippets(
     try {
       json = await response.json()
     } catch (err) {
+      diagnostics.push({
+        bucket: searchQuery.bucket,
+        query: searchQuery.query,
+        includeDomains: searchQuery.includeDomains,
+        maxResults: searchQuery.maxResults,
+        topic: searchQuery.topic,
+        resultCount: 0,
+        keptCount: 0,
+        urls: [],
+        error: err instanceof Error ? err.message : String(err),
+      })
       console.warn("[tavily] json_parse_error", {
         symbol,
         message: err instanceof Error ? err.message : String(err),
@@ -703,6 +513,17 @@ async function fetchWebSearchSnippets(
     const parsed = tavilySearchSchema.safeParse(json)
 
     if (!parsed.success) {
+      diagnostics.push({
+        bucket: searchQuery.bucket,
+        query: searchQuery.query,
+        includeDomains: searchQuery.includeDomains,
+        maxResults: searchQuery.maxResults,
+        topic: searchQuery.topic,
+        resultCount: 0,
+        keptCount: 0,
+        urls: [],
+        error: "Tavily response schema mismatch",
+      })
       console.warn("[tavily] schema_mismatch", {
         symbol,
         queryPreview: searchQuery.query.slice(0, 120),
@@ -711,7 +532,12 @@ async function fetchWebSearchSnippets(
       continue
     }
 
+    let resultCount = 0
+    let keptCount = 0
+    const urls: string[] = []
+
     for (const result of parsed.data.results ?? []) {
+      resultCount += 1
       const quote = compactWhitespace(result.raw_content ?? result.content ?? "")
 
       if (!result.url || !result.title || !quote) {
@@ -732,6 +558,10 @@ async function fetchWebSearchSnippets(
       }
 
       seenUrls.add(normalizedUrl)
+      keptCount += 1
+      if (urls.length < MAX_DIAGNOSTIC_URLS_PER_QUERY) {
+        urls.push(normalizedUrl)
+      }
       snippets.push({
         url: normalizedUrl,
         title: result.title,
@@ -740,9 +570,265 @@ async function fetchWebSearchSnippets(
         quote: quote.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
       })
     }
+
+    diagnostics.push({
+      bucket: searchQuery.bucket,
+      query: searchQuery.query,
+      includeDomains: searchQuery.includeDomains,
+      maxResults: searchQuery.maxResults,
+      topic: searchQuery.topic,
+      resultCount,
+      keptCount,
+      urls,
+    })
   }
 
-  return diversifySnippetsByDomain(snippets, MAX_WEB_SNIPPETS)
+  return {
+    snippets: diversifySnippetsByDomain(snippets, MAX_WEB_SNIPPETS),
+    diagnostics,
+  }
+}
+
+function hostedSearchProvider() {
+  const provider = process.env.CATALYST_HOSTED_SEARCH_PROVIDER?.toLowerCase()
+
+  return provider === "gemini" ? provider : null
+}
+
+function buildGroundedSearchPrompt(
+  symbol: string,
+  companyName: string | undefined,
+  industry: string | undefined,
+  now: number,
+  selectedPlan: SearchQuery[],
+) {
+  const today = new Date(now).toISOString().slice(0, 10)
+  const companyLabel = companyName ? `${companyName} (${symbol})` : symbol
+  const queryHints = selectedPlan
+    .slice(0, 10)
+    .map((query) => `- [${query.bucket}] ${query.query}`)
+    .join("\n")
+
+  return [
+    `Today is ${today}. Search the web for upcoming stock catalysts for ${companyLabel} over the next 12 months.`,
+    industry ? `Industry context: ${industry}.` : "",
+    "Do not use ticker-specific event maps. Discover catalysts from current sources and infer event names, regulator timelines, launches, conferences, and partnership milestones from the web evidence.",
+    "For regulated companies, explicitly look for agency reviews, license or permit decisions, environmental reviews, hearings, votes, approval deadlines, and project timelines.",
+    "For product-led companies, look for recurring branded events, registration pages, venue calendars, keynotes, product launch pages, and roadmap milestones.",
+    "Use these query themes as hints, then reformulate searches if the company uses branded names:",
+    queryHints,
+    "Return a concise evidence digest with source titles and URLs. Include aliases or named events you discovered.",
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+}
+
+async function fetchGeminiGroundedSearchSnippets(
+  symbol: string,
+  companyName: string | undefined,
+  industry: string | undefined,
+  now: number,
+  selectedPlan: SearchQuery[],
+): Promise<{
+  snippets: SourceSnippet[]
+  diagnostics: SearchQueryDiagnostic[]
+}> {
+  const apiKey = process.env.GEMINI_API_KEY
+  const model = process.env.GEMINI_SEARCH_MODEL ?? "gemini-2.5-flash"
+  const prompt = buildGroundedSearchPrompt(
+    symbol,
+    companyName,
+    industry,
+    now,
+    selectedPlan,
+  )
+  const diagnosticBase = {
+    bucket: "market_news" as const,
+    query: `Gemini grounded search: ${symbol}`,
+    maxResults: 10,
+    topic: "general" as const,
+  }
+
+  if (!apiKey) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: "Missing GEMINI_API_KEY for Gemini grounded search",
+        },
+      ],
+    }
+  }
+
+  let response: Response
+
+  try {
+    response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        model,
+      )}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }],
+            },
+          ],
+          tools: [{ google_search: {} }],
+        }),
+      },
+    )
+  } catch (err) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: err instanceof Error ? err.message : String(err),
+        },
+      ],
+    }
+  }
+
+  if (!response.ok) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: `Gemini HTTP ${response.status}`,
+        },
+      ],
+    }
+  }
+
+  let json: unknown
+  try {
+    json = await response.json()
+  } catch (err) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: err instanceof Error ? err.message : String(err),
+        },
+      ],
+    }
+  }
+
+  const parsed = geminiGroundedSearchSchema.safeParse(json)
+  if (!parsed.success) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: "Gemini response schema mismatch",
+        },
+      ],
+    }
+  }
+
+  const candidate = parsed.data.candidates?.[0]
+  const digest = compactWhitespace(
+    candidate?.content?.parts
+      ?.map((part) => part.text)
+      .filter((text): text is string => Boolean(text))
+      .join(" ") ?? "",
+  )
+  const snippets: SourceSnippet[] = []
+  const urls: string[] = []
+
+  for (const chunk of candidate?.groundingMetadata?.groundingChunks ?? []) {
+    const url = chunk.web?.uri
+    const title = chunk.web?.title
+
+    if (!url || !title || !digest) {
+      continue
+    }
+
+    const normalizedUrl = normalizeSourceUrl(url)
+    let publisher: string
+    try {
+      publisher = new URL(normalizedUrl).hostname.replace(/^www\./, "")
+    } catch {
+      continue
+    }
+
+    if (urls.includes(normalizedUrl)) {
+      continue
+    }
+
+    urls.push(normalizedUrl)
+    snippets.push({
+      url: normalizedUrl,
+      title,
+      publisher,
+      quote: digest.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
+    })
+  }
+
+  return {
+    snippets,
+    diagnostics: [
+      {
+        ...diagnosticBase,
+        resultCount:
+          candidate?.groundingMetadata?.groundingChunks?.length ??
+          candidate?.groundingMetadata?.webSearchQueries?.length ??
+          0,
+        keptCount: snippets.length,
+        urls: urls.slice(0, MAX_DIAGNOSTIC_URLS_PER_QUERY),
+      },
+    ],
+  }
+}
+
+async function fetchHostedSearchSnippets(
+  symbol: string,
+  companyName: string | undefined,
+  industry: string | undefined,
+  now: number,
+  selectedPlan: SearchQuery[],
+): Promise<{
+  snippets: SourceSnippet[]
+  diagnostics: SearchQueryDiagnostic[]
+}> {
+  const provider = hostedSearchProvider()
+
+  if (provider === "gemini") {
+    return await fetchGeminiGroundedSearchSnippets(
+      symbol,
+      companyName,
+      industry,
+      now,
+      selectedPlan,
+    )
+  }
+
+  return { snippets: [], diagnostics: [] }
 }
 
 function buildDeterministicEvents(
@@ -786,6 +872,7 @@ function buildDeterministicEvents(
 async function buildAiEvents(
   symbol: string,
   snippets: SourceSnippet[],
+  candidates: ResearchCandidate[],
   now: number,
 ): Promise<CatalystResearch | null> {
   const model = process.env.AI_GATEWAY_MODEL
@@ -804,6 +891,8 @@ async function buildAiEvents(
       "Use only the source snippets below. Do not invent events.",
       "Every event must include at least one source copied from the snippets and must be excluded if no snippet supports it.",
       "Look beyond earnings. Prioritize material stock-moving catalysts: product launches, production ramps, regulatory approvals, market expansion, investor days, recurring branded company events, developer/customer conferences, product keynotes, corporate presentations, shareholder meetings, partnerships and strategic deals, spin-offs/M&A/corporate actions, management guidance, capex milestones, legal decisions, contracts, clinical/data readouts, and commercialization milestones.",
+      "Treat candidate leads as routing hints, not facts. Resolve ambiguous product names to the actual company event, regulator, program, or launch milestone only when the snippets support that connection.",
+      "For regulated industries, look carefully for permit, license, agency review, environmental review, hearing, vote, and approval timelines even when the event is not marketed as a conference or launch.",
       "Classify eventType using: earnings, product, regulatory, launch, investor_day, conference (trade shows, keynote slots, sell-side conferences, webcast-only conference tracks), partnership (JVs, OEM, major customer or collaboration deals), corporate (M&A, spin-offs, reorgs, financings, proxy votes), macro, legal, other.",
       "Roadmap or target milestones are allowed when supported by company statements, filings, transcripts, regulator pages, exchange calendars, or credible reporting. Use status 'likely' or 'speculative' and lower confidence when timing is inferred from a target, cadence, or historical calendar pattern.",
       "Do not require exact dates. Use expectedDate for exact dates, windowStart/windowEnd for month/quarter/season/year-end windows, and datePrecision to show how specific the timing is.",
@@ -812,6 +901,9 @@ async function buildAiEvents(
       "Prefer confirmed company, exchange, regulator, SEC, or investor relations sources over commentary.",
       "Use null for unknown company, exchange, publication date, or event date fields.",
       "Copy source url, title, publisher, publishedAt, and quote from the snippets instead of paraphrasing source metadata.",
+      "Candidate leads detected from the snippets:",
+      JSON.stringify(candidates, null, 2),
+      "Source snippets:",
       JSON.stringify(snippets, null, 2),
     ].join("\n\n"),
   })
@@ -931,27 +1023,61 @@ export const runResearch = internalAction({
         researchStartedAt,
         finnhub.finnhubIndustry,
       )
-      const webSearchQueryLimit =
+      const webSearchQueryBudget =
         run.source === "anonymous"
-          ? Math.min(5, webSearchPlan.length)
+          ? Math.min(ANONYMOUS_WEB_QUERY_BUDGET, webSearchPlan.length)
           : webSearchPlan.length
+      const selectedWebSearchPlan = selectBalancedSearchPlan(
+        webSearchPlan,
+        webSearchQueryBudget,
+      )
 
-      const webSnippets = await fetchWebSearchSnippets(
+      const webResearch = await fetchWebSearchSnippets(
         run.symbol,
         companyNameForSearch,
         finnhub.companyWebsite,
         researchStartedAt,
-        webSearchQueryLimit,
+        selectedWebSearchPlan,
         webSearchPlan,
       )
-      const snippets = [...finnhub.snippets, ...webSnippets]
+      const hostedResearch = await fetchHostedSearchSnippets(
+        run.symbol,
+        companyNameForSearch,
+        finnhub.finnhubIndustry,
+        researchStartedAt,
+        selectedWebSearchPlan,
+      )
+      const snippets = [
+        ...finnhub.snippets,
+        ...hostedResearch.snippets,
+        ...webResearch.snippets,
+      ]
+      const candidates = buildResearchCandidates(snippets)
       const aiResearch = await buildAiEvents(
         run.symbol,
         snippets,
+        candidates,
         researchStartedAt,
       )
       const events =
         aiResearch?.events ?? buildDeterministicEvents(run.symbol, snippets)
+
+      await ctx.runMutation(
+        internal.researchInternal.recordResearchDiagnostics,
+        {
+          runId: args.runId,
+          symbol: run.symbol,
+          searchQueryCount: selectedWebSearchPlan.length,
+          snippetCount: snippets.length,
+          candidateCount: candidates.length,
+          extractionEventCount: events.length,
+          queries: [
+            ...hostedResearch.diagnostics,
+            ...webResearch.diagnostics,
+          ],
+          candidates,
+        },
+      )
 
       if (events.length === 0) {
         const missingConfig = getMissingBroadResearchConfig()

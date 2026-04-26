@@ -14,11 +14,19 @@ export default function Page() {
             className="shrink-0 rounded-md ring-offset-background transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <Image
-              src="/logo.png"
+              src="/logo-light.png"
               alt="Stonkseer"
               width={48}
               height={48}
-              className="size-12"
+              className="size-12 dark:hidden"
+              priority
+            />
+            <Image
+              src="/logo-dark.png"
+              alt="Stonkseer"
+              width={48}
+              height={48}
+              className="size-12 hidden dark:block"
               priority
             />
           </Link>
