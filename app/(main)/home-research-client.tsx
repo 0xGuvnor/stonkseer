@@ -347,7 +347,7 @@ export function HomeResearchClient() {
                       <Input
                         aria-label="Ticker symbol"
                         autoComplete="off"
-                        className="h-14 rounded-full border pr-14 pl-12 uppercase shadow-sm"
+                        className="h-14 rounded-full border pr-14 pl-12 uppercase shadow-sm placeholder:normal-case"
                         maxLength={10}
                         placeholder="Enter a ticker, e.g. AAPL"
                         {...field}
@@ -359,7 +359,7 @@ export function HomeResearchClient() {
                           ? "Starting research"
                           : "Research"
                       }
-                      className="absolute top-1/2 right-2 size-10 -translate-y-1/2 rounded-full"
+                      className="absolute top-1/2 right-2 size-10 -translate-y-1/2 rounded-full active:not-aria-[haspopup]:-translate-y-1/2"
                       disabled={
                         form.formState.isSubmitting ||
                         !form.formState.isValid ||
