@@ -121,6 +121,22 @@ function formatTimingFragment(raw: string): string {
   return tryFormatIsoDatePrefix(raw) ?? raw.trim()
 }
 
+/** First letter of each word upper (snake_case → spaced words). */
+function formatEnumLabel(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) {
+    return raw
+  }
+  return trimmed
+    .split("_")
+    .map((part) =>
+      part.length === 0
+        ? part
+        : part.charAt(0).toUpperCase() + part.slice(1).toLowerCase(),
+    )
+    .join(" ")
+}
+
 function clientNowMs(): number {
   return Date.now()
 }
@@ -448,7 +464,7 @@ export function HomeResearchClient() {
             ) : null}
 
             {results.events.length > 0 ? (
-              <Table className="min-w-[760px]">
+              <Table className="min-w-[640px]">
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
@@ -464,9 +480,6 @@ export function HomeResearchClient() {
                       Type
                     </TableHead>
                     <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                      Status
-                    </TableHead>
-                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
                       Impact
                     </TableHead>
                     <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
@@ -475,69 +488,64 @@ export function HomeResearchClient() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {results.events.map((event: CatalystEventView) => {
-                    const sourcesTitle = event.sources
-                      .map((s) => `${s.publisher}: ${s.title}`)
-                      .join("\n")
-                    const primary = event.sources[0]
-
-                    return (
-                      <TableRow key={event._id}>
-                        <TableCell className="max-w-md align-top whitespace-normal">
-                          <div className="space-y-2">
-                            <div className="font-medium">{event.title}</div>
-                            {event.summary.trim() ? (
-                              <p className="text-sm leading-snug font-normal text-muted-foreground">
-                                {event.summary}
-                              </p>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
-                          {event.whyItMatters.trim() ? (
-                            event.whyItMatters
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-56 align-top whitespace-normal text-muted-foreground">
-                          {eventTimingLabel(event)}
-                        </TableCell>
-                        <TableCell className="max-w-40 align-top whitespace-normal">
-                          {event.eventType}
-                        </TableCell>
-                        <TableCell className="max-w-40 align-top whitespace-normal text-muted-foreground">
-                          {event.status}
-                        </TableCell>
-                        <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
-                          {event.expectedImpact}
-                        </TableCell>
-                        <TableCell className="align-top whitespace-normal">
-                          {primary ? (
-                            <Button
-                              variant="link"
-                              size="sm"
-                              className="h-auto min-h-0 p-0 font-normal"
-                              asChild
-                            >
-                              <a
-                                href={primary.url}
-                                rel="noreferrer"
-                                target="_blank"
-                                title={sourcesTitle || undefined}
+                  {results.events.map((event: CatalystEventView) => (
+                    <TableRow key={event._id}>
+                      <TableCell className="max-w-md align-top whitespace-normal">
+                        <div className="space-y-2">
+                          <div className="font-medium">{event.title}</div>
+                          {event.summary.trim() ? (
+                            <p className="text-sm leading-snug font-normal text-muted-foreground">
+                              {event.summary}
+                            </p>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
+                        {event.whyItMatters.trim() ? (
+                          event.whyItMatters
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="max-w-56 align-top whitespace-normal text-muted-foreground">
+                        {eventTimingLabel(event)}
+                      </TableCell>
+                      <TableCell className="max-w-40 align-top whitespace-normal">
+                        {formatEnumLabel(event.eventType)}
+                      </TableCell>
+                      <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
+                        {formatEnumLabel(event.expectedImpact)}
+                      </TableCell>
+                      <TableCell className="align-top whitespace-normal">
+                        {event.sources.length > 0 ? (
+                          <div className="flex flex-col items-start gap-1">
+                            {event.sources.map((source) => (
+                              <Button
+                                key={source._id}
+                                variant="link"
+                                size="sm"
+                                className="h-auto min-h-0 p-0 font-normal"
+                                asChild
                               >
-                                {event.sources.length > 1
-                                  ? `${event.sources.length} links`
-                                  : "Link"}
-                              </a>
-                            </Button>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
+                                <a
+                                  href={source.url}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                  title={`${source.publisher}: ${source.title}`}
+                                >
+                                  <span className="max-w-[12rem] truncate">
+                                    {source.publisher}
+                                  </span>
+                                </a>
+                              </Button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             ) : null}

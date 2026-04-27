@@ -1,7 +1,5 @@
 import type { CatalystResearch } from "./research-contract"
 
-export type TavilyTopic = "finance" | "general"
-
 export type SearchBucket =
   | "official"
   | "branded_event"
@@ -19,8 +17,6 @@ export type SearchQuery = {
   query: string
   includeDomains?: string[]
   maxResults?: number
-  /** Tavily topic; default finance when omitted. */
-  topic?: TavilyTopic
 }
 
 export type SearchQueryDiagnostic = {
@@ -28,7 +24,6 @@ export type SearchQueryDiagnostic = {
   query: string
   includeDomains?: string[]
   maxResults?: number
-  topic?: TavilyTopic
   resultCount: number
   keptCount: number
   urls: string[]
@@ -145,7 +140,6 @@ function industryTailQueries(
       bucket: "regulatory",
       query: `${companyLabel} FDA PDUFA advisory committee clinical trial readout topline data ${yearWindow}`,
       maxResults: 6,
-      topic: "general",
     })
   }
 
@@ -154,7 +148,6 @@ function industryTailQueries(
       bucket: "industry",
       query: `${companyLabel} developer conference platform roadmap enterprise customer momentum ${yearWindow}`,
       maxResults: 5,
-      topic: "general",
     })
   }
 
@@ -163,7 +156,6 @@ function industryTailQueries(
       bucket: "industry",
       query: `${companyLabel} investor conference banking forum CCAR stress test financial forum ${yearWindow}`,
       maxResults: 5,
-      topic: "finance",
     })
   }
 
@@ -173,19 +165,16 @@ function industryTailQueries(
         bucket: "industry",
         query: `${companyLabel} production guidance capacity project commissioning FID sanction ${yearWindow}`,
         maxResults: 5,
-        topic: "general",
       },
       {
         bucket: "regulatory",
         query: `${companyLabel} regulatory approval license permit NRC DOE FERC environmental review project timeline ${yearWindow}`,
         maxResults: 6,
-        topic: "general",
       },
       {
         bucket: "industry",
         query: `${companyLabel} nuclear uranium SMR reactor fuel supply offtake permitting milestone ${yearWindow}`,
         maxResults: 5,
-        topic: "general",
       },
     )
   }
@@ -206,27 +195,23 @@ function recurringEventDiscoveryQueries(
       query: `${companyLabel} annual developer conference keynote product announcements ${yearWindow}`,
       includeDomains: officialDomains,
       maxResults: 8,
-      topic: "general",
     },
     {
       bucket: "branded_event",
       query: `${companyLabel} annual customer conference user conference summit keynote product announcements ${yearWindow}`,
       includeDomains: officialDomains,
       maxResults: 8,
-      topic: "general",
     },
     {
       bucket: "branded_event",
       query: `${companyLabel} official event keynote product launch announcements ${yearWindow}`,
       includeDomains: officialDomains,
       maxResults: 8,
-      topic: "general",
     },
     {
       bucket: "branded_event",
       query: `${companyLabel} recurring annual event conference keynote launch roadmap ${yearWindow}`,
       maxResults: 8,
-      topic: "general",
     },
   ]
 }
@@ -261,39 +246,33 @@ export function buildSearchQueries(
       bucket: "financial",
       query: `${companyLabel} corporate presentation conference webcast fireside chat speaking slot investor conference ${yearWindow}`,
       maxResults: 6,
-      topic: "general",
     },
     {
       bucket: "branded_event",
       query: `${companyLabel} trade show user conference summit keynote booth exhibition ${yearWindow}`,
       maxResults: 5,
-      topic: "general",
     },
     {
       bucket: "branded_event",
       query: `${companyLabel} branded annual conference event name keynote registration agenda ${yearWindow}`,
       maxResults: 6,
-      topic: "general",
     },
     {
       bucket: "partnership",
       query: `${companyLabel} strategic partnership collaboration joint venture OEM supply agreement customer win ${yearWindow}`,
       maxResults: 5,
-      topic: "general",
     },
     {
       bucket: "regulatory",
       query: `${companyLabel} Form 8-K material definitive agreement press release exhibit future ${yearWindow}`,
       includeDomains: ["sec.gov"],
       maxResults: 6,
-      topic: "general",
     },
     {
       bucket: "corporate",
       query: `${companyLabel} ${symbol} merger acquisition spin-off restructuring shareholder vote proxy ${yearWindow}`,
       includeDomains: ["sec.gov"],
       maxResults: 5,
-      topic: "general",
     },
     {
       bucket: "product",
@@ -346,7 +325,6 @@ export function buildSearchQueries(
         query: `${companyLabel} official events conference agenda registration keynote ${yearWindow}`,
         includeDomains: [officialDomain],
         maxResults: 5,
-        topic: "general",
       },
     )
   }

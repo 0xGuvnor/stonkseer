@@ -18,7 +18,6 @@ export type CatalystEventView = {
   windowStart?: string
   windowEnd?: string
   datePrecision: string
-  status: string
   confidence: number
   expectedImpact: string
   sources: EventSourceView[]

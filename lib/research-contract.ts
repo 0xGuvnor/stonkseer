@@ -76,8 +76,18 @@ export const catalystSourceAiSchema = z.object({
 
 export const catalystEventAiSchema = z.object({
   title: z.string().min(1),
-  summary: z.string().min(1),
-  whyItMatters: z.string().min(1),
+  summary: z
+    .string()
+    .min(1)
+    .describe(
+      "1–2 short sentences max: factual what/when/context from sources only. Do not repeat the title or argue importance; no bullets or long hedging.",
+    ),
+  whyItMatters: z
+    .string()
+    .min(1)
+    .describe(
+      "One short sentence (two only if necessary): why the stock might move (guidance, valuation, regulatory outcome, demand, etc.). Do not restate the summary.",
+    ),
   eventType: z.enum([
     "earnings",
     "product",

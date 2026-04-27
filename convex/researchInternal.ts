@@ -38,7 +38,6 @@ const searchDiagnosticInput = v.object({
   query: v.string(),
   includeDomains: v.optional(v.array(v.string())),
   maxResults: v.optional(v.number()),
-  topic: v.optional(v.union(v.literal("finance"), v.literal("general"))),
   resultCount: v.number(),
   keptCount: v.number(),
   urls: v.array(v.string()),

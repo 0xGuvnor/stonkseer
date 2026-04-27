@@ -80,20 +80,6 @@ const OPENAI_SEARCH_CONTEXT_SIZES = ["low", "medium", "high"] as const
 type HostedSearchProvider = (typeof HOSTED_SEARCH_PROVIDERS)[number]
 type OpenAiSearchContextSize = (typeof OPENAI_SEARCH_CONTEXT_SIZES)[number]
 
-const tavilySearchSchema = z.object({
-  results: z
-    .array(
-      z.object({
-        title: z.string().optional(),
-        url: z.string().optional(),
-        content: z.string().nullable().optional(),
-        raw_content: z.string().nullable().optional(),
-        published_date: z.string().nullable().optional(),
-      })
-    )
-    .optional(),
-})
-
 const geminiGroundedSearchSchema = z.object({
   candidates: z
     .array(
@@ -563,207 +549,6 @@ function assertTickerExists(validation: TickerValidation) {
   }
 }
 
-async function fetchWebSearchSnippets(
-  symbol: string,
-  companyName: string | undefined,
-  companyWebsite: string | undefined,
-  now: number,
-  selectedPlan: SearchQuery[],
-  queryPlan?: SearchQuery[]
-): Promise<{
-  snippets: SourceSnippet[]
-  diagnostics: SearchQueryDiagnostic[]
-}> {
-  const apiKey = process.env.TAVILY_API_KEY
-
-  if (!apiKey) {
-    return { snippets: [], diagnostics: [] }
-  }
-
-  const snippets: SourceSnippet[] = []
-  const seenUrls = new Set<string>()
-  const diagnostics: SearchQueryDiagnostic[] = []
-
-  const plan =
-    queryPlan ??
-    buildSearchQueries(symbol, companyName, companyWebsite, now, undefined)
-
-  for (const searchQuery of selectedPlan.length > 0 ? selectedPlan : plan) {
-    let response: Response
-
-    try {
-      const body: Record<string, unknown> = {
-        query: searchQuery.query,
-        topic: searchQuery.topic ?? "finance",
-        search_depth: "advanced",
-        max_results: searchQuery.maxResults ?? 5,
-        include_answer: false,
-        include_raw_content: true,
-      }
-
-      if (searchQuery.includeDomains) {
-        body.include_domains = searchQuery.includeDomains
-      }
-
-      response = await fetch("https://api.tavily.com/search", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-      })
-    } catch (err) {
-      diagnostics.push({
-        bucket: searchQuery.bucket,
-        query: searchQuery.query,
-        includeDomains: searchQuery.includeDomains,
-        maxResults: searchQuery.maxResults,
-        topic: searchQuery.topic,
-        resultCount: 0,
-        keptCount: 0,
-        urls: [],
-        error: err instanceof Error ? err.message : String(err),
-      })
-      console.warn("[tavily] fetch_error", {
-        symbol,
-        message: err instanceof Error ? err.message : String(err),
-        queryPreview: searchQuery.query.slice(0, 120),
-      })
-      continue
-    }
-
-    if (!response.ok) {
-      let errorBody = ""
-      try {
-        errorBody = (await response.text()).slice(0, 500)
-      } catch {
-        /* ignore */
-      }
-      diagnostics.push({
-        bucket: searchQuery.bucket,
-        query: searchQuery.query,
-        includeDomains: searchQuery.includeDomains,
-        maxResults: searchQuery.maxResults,
-        topic: searchQuery.topic,
-        resultCount: 0,
-        keptCount: 0,
-        urls: [],
-        error: `HTTP ${response.status}`,
-      })
-      console.warn("[tavily] http_error", {
-        symbol,
-        status: response.status,
-        queryPreview: searchQuery.query.slice(0, 120),
-        body: errorBody || undefined,
-      })
-      continue
-    }
-
-    let json: unknown
-    try {
-      json = await response.json()
-    } catch (err) {
-      diagnostics.push({
-        bucket: searchQuery.bucket,
-        query: searchQuery.query,
-        includeDomains: searchQuery.includeDomains,
-        maxResults: searchQuery.maxResults,
-        topic: searchQuery.topic,
-        resultCount: 0,
-        keptCount: 0,
-        urls: [],
-        error: err instanceof Error ? err.message : String(err),
-      })
-      console.warn("[tavily] json_parse_error", {
-        symbol,
-        message: err instanceof Error ? err.message : String(err),
-        queryPreview: searchQuery.query.slice(0, 120),
-      })
-      continue
-    }
-
-    const parsed = tavilySearchSchema.safeParse(json)
-
-    if (!parsed.success) {
-      diagnostics.push({
-        bucket: searchQuery.bucket,
-        query: searchQuery.query,
-        includeDomains: searchQuery.includeDomains,
-        maxResults: searchQuery.maxResults,
-        topic: searchQuery.topic,
-        resultCount: 0,
-        keptCount: 0,
-        urls: [],
-        error: "Tavily response schema mismatch",
-      })
-      console.warn("[tavily] schema_mismatch", {
-        symbol,
-        queryPreview: searchQuery.query.slice(0, 120),
-        issues: parsed.error.issues.slice(0, 8),
-      })
-      continue
-    }
-
-    let resultCount = 0
-    let keptCount = 0
-    const urls: string[] = []
-
-    for (const result of parsed.data.results ?? []) {
-      resultCount += 1
-      const quote = compactWhitespace(
-        result.raw_content ?? result.content ?? ""
-      )
-
-      if (!result.url || !result.title || !quote) {
-        continue
-      }
-
-      let publisher: string
-      const normalizedUrl = normalizeSourceUrl(result.url)
-
-      try {
-        publisher = new URL(normalizedUrl).hostname.replace(/^www\./, "")
-      } catch {
-        continue
-      }
-
-      if (seenUrls.has(normalizedUrl)) {
-        continue
-      }
-
-      seenUrls.add(normalizedUrl)
-      keptCount += 1
-      if (urls.length < MAX_DIAGNOSTIC_URLS_PER_QUERY) {
-        urls.push(normalizedUrl)
-      }
-      snippets.push({
-        url: normalizedUrl,
-        title: result.title,
-        publisher,
-        publishedAt: result.published_date ?? undefined,
-        quote: quote.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
-      })
-    }
-
-    diagnostics.push({
-      bucket: searchQuery.bucket,
-      query: searchQuery.query,
-      includeDomains: searchQuery.includeDomains,
-      maxResults: searchQuery.maxResults,
-      topic: searchQuery.topic,
-      resultCount,
-      keptCount,
-      urls,
-    })
-  }
-
-  return {
-    snippets: diversifySnippetsByDomain(snippets, MAX_WEB_SNIPPETS),
-    diagnostics,
-  }
-}
-
 function buildGroundedSearchPrompt(
   symbol: string,
   companyName: string | undefined,
@@ -840,7 +625,6 @@ async function fetchOpenAiSearchSnippets(
     bucket: "market_news" as const,
     query: `OpenAI web search: ${symbol}`,
     maxResults: 10,
-    topic: "general" as const,
   }
 
   if (!model) {
@@ -976,7 +760,6 @@ async function fetchAnthropicSearchSnippets(
     bucket: "market_news" as const,
     query: `Anthropic web search: ${symbol}`,
     maxResults: 10,
-    topic: "general" as const,
   }
 
   if (!model) {
@@ -1110,7 +893,6 @@ async function fetchXaiSearchSnippets(
     bucket: "market_news" as const,
     query: `xAI Grok X search: ${symbol}`,
     maxResults: 10,
-    topic: "general" as const,
   }
 
   if (!model) {
@@ -1275,7 +1057,6 @@ async function fetchGeminiGroundedSearchSnippets(
     bucket: "market_news" as const,
     query: `Gemini grounded search: ${symbol}`,
     maxResults: 10,
-    topic: "general" as const,
   }
 
   if (!apiKey) {
@@ -1515,9 +1296,9 @@ function buildDeterministicEvents(
     {
       title: `${symbol} earnings calendar window`,
       summary:
-        "A near-term earnings window was found in a finance calendar source. Treat this as a starting point and verify against the company's investor relations site before trading.",
+        "Earnings window from a finance calendar; confirm dates on the company IR site.",
       whyItMatters:
-        "Earnings calls can update guidance, margins, demand signals, capital allocation, and management commentary.",
+        "Earnings can reset guidance, margins, and how the market prices the stock.",
       eventType: "earnings",
       datePrecision: "unknown",
       confidence: 0.55,
@@ -1570,6 +1351,8 @@ async function buildAiEvents(
       "When hosted search providers disagree, keep only events supported by concrete source snippets and prefer primary sources over provider summaries.",
       "Use null for unknown company, exchange, publication date, or event date fields.",
       "Copy source url, title, publisher, publishedAt, and quote from the snippets instead of paraphrasing source metadata.",
+      "summary: Factual what/when/context only, in 1–2 short sentences (or one tight sentence). Do not repeat the title, do not explain importance here, no bullet lists, no long hedging.",
+      "whyItMatters: One short sentence (two only if strictly necessary) on why the stock might move (e.g. guidance, multiple, regulatory binary, demand). Do not restate the full summary.",
       "Candidate leads detected from the snippets:",
       JSON.stringify(candidates, null, 2),
       "Source snippets:",
@@ -1589,10 +1372,6 @@ function getMissingBroadResearchConfig() {
 
   if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) {
     missing.push("AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN")
-  }
-
-  if (!process.env.TAVILY_API_KEY) {
-    missing.push("TAVILY_API_KEY")
   }
 
   return missing
@@ -1701,28 +1480,14 @@ export const runResearch = internalAction({
         webSearchQueryBudget
       )
 
-      const [webResearch, hostedResearch] = await Promise.all([
-        fetchWebSearchSnippets(
-          run.symbol,
-          companyNameForSearch,
-          finnhub.companyWebsite,
-          researchStartedAt,
-          selectedWebSearchPlan,
-          webSearchPlan
-        ),
-        fetchHostedSearchSnippets(
-          run.symbol,
-          companyNameForSearch,
-          finnhub.finnhubIndustry,
-          researchStartedAt,
-          selectedWebSearchPlan
-        ),
-      ])
-      const snippets = [
-        ...finnhub.snippets,
-        ...hostedResearch.snippets,
-        ...webResearch.snippets,
-      ]
+      const hostedResearch = await fetchHostedSearchSnippets(
+        run.symbol,
+        companyNameForSearch,
+        finnhub.finnhubIndustry,
+        researchStartedAt,
+        selectedWebSearchPlan
+      )
+      const snippets = [...finnhub.snippets, ...hostedResearch.snippets]
       const candidates = buildResearchCandidates(snippets)
       const aiResearch = await buildAiEvents(
         run.symbol,
@@ -1742,7 +1507,7 @@ export const runResearch = internalAction({
           snippetCount: snippets.length,
           candidateCount: candidates.length,
           extractionEventCount: events.length,
-          queries: [...hostedResearch.diagnostics, ...webResearch.diagnostics],
+          queries: hostedResearch.diagnostics,
           candidates,
         }
       )
