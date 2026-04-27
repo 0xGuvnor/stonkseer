@@ -782,7 +782,7 @@ async function fetchAnthropicSearchSnippets(
     const result = await generateText({
       model,
       tools: {
-        web_search: anthropic.tools.webSearch_20260209({
+        web_search: anthropic.tools.webSearch_20250305({
           maxUses: anthropicWebSearchMaxUses(),
         }),
       },
@@ -1330,34 +1330,37 @@ async function buildAiEvents(
     return null
   }
 
+  const prompt = [
+    `Today is ${new Date(now).toISOString().slice(0, 10)}. Extract upcoming catalyst events for ${symbol} over the next 12 months.`,
+    "Use only the source snippets below. Do not invent events.",
+    "Every event must include at least one source copied from the snippets and must be excluded if no snippet supports it.",
+    "Look beyond earnings. Prioritize material stock-moving catalysts: product launches, production ramps, regulatory approvals, market expansion, investor days, recurring branded company events, developer/customer conferences, product keynotes, corporate presentations, shareholder meetings, partnerships and strategic deals, spin-offs/M&A/corporate actions, management guidance, capex milestones, legal decisions, contracts, clinical/data readouts, and commercialization milestones.",
+    "Treat candidate leads as routing hints, not facts. Resolve ambiguous product names to the actual company event, regulator, program, or launch milestone only when the snippets support that connection.",
+    "For regulated industries, look carefully for permit, license, agency review, environmental review, hearing, vote, and approval timelines even when the event is not marketed as a conference or launch.",
+    "Classify eventType using: earnings, product, regulatory, launch, investor_day, conference (trade shows, keynote slots, sell-side conferences, webcast-only conference tracks), partnership (JVs, OEM, major customer or collaboration deals), corporate (M&A, spin-offs, reorgs, financings, proxy votes), macro, legal, other.",
+    "When snippets clearly describe the same real-world occasion (same named flagship or recurring company event, same schedule or venue, same official registration or agenda page), output one merged event—not separate rows for 'the conference' versus 'expected announcements there'. Put likely product or AI reveals in summary and whyItMatters; pick the dominant eventType (often conference or investor_day for the umbrella moment).",
+    "Roadmap or target milestones are allowed when supported by company statements, filings, transcripts, regulator pages, exchange calendars, or credible reporting. Use status 'likely' or 'speculative' and lower confidence when timing is inferred from a target, cadence, or historical calendar pattern.",
+    "Do not require exact dates. Use expectedDate for exact dates, windowStart/windowEnd for month/quarter/season/year-end windows, and datePrecision to show how specific the timing is.",
+    "Exclude stale past events unless a source clearly supports a future recurrence or future milestone.",
+    "Return up to 12 highest-impact events, ordered chronologically when timing is known.",
+    "Prefer confirmed company, exchange, regulator, SEC, or investor relations sources over commentary.",
+    "When hosted search providers disagree, keep only events supported by concrete source snippets and prefer primary sources over provider summaries.",
+    "Use null for unknown company, exchange, publication date, or event date fields.",
+    "Copy source url, title, publisher, publishedAt, and quote from the snippets instead of paraphrasing source metadata.",
+    "summary: Factual what/when/context only, in 1–2 short sentences (or one tight sentence). Do not repeat the title, do not explain importance here, no bullet lists, no long hedging.",
+    "whyItMatters: One short sentence (two only if strictly necessary) on why the stock might move (e.g. guidance, multiple, regulatory binary, demand). Do not restate the full summary.",
+    "Candidate leads detected from the snippets:",
+    JSON.stringify(candidates, null, 2),
+    "Source snippets:",
+    JSON.stringify(snippets, null, 2),
+  ].join("\n\n")
+
   const { output } = await generateText({
     model,
     output: Output.object({
       schema: catalystResearchAiSchema,
     }),
-    prompt: [
-      `Today is ${new Date(now).toISOString().slice(0, 10)}. Extract upcoming catalyst events for ${symbol} over the next 12 months.`,
-      "Use only the source snippets below. Do not invent events.",
-      "Every event must include at least one source copied from the snippets and must be excluded if no snippet supports it.",
-      "Look beyond earnings. Prioritize material stock-moving catalysts: product launches, production ramps, regulatory approvals, market expansion, investor days, recurring branded company events, developer/customer conferences, product keynotes, corporate presentations, shareholder meetings, partnerships and strategic deals, spin-offs/M&A/corporate actions, management guidance, capex milestones, legal decisions, contracts, clinical/data readouts, and commercialization milestones.",
-      "Treat candidate leads as routing hints, not facts. Resolve ambiguous product names to the actual company event, regulator, program, or launch milestone only when the snippets support that connection.",
-      "For regulated industries, look carefully for permit, license, agency review, environmental review, hearing, vote, and approval timelines even when the event is not marketed as a conference or launch.",
-      "Classify eventType using: earnings, product, regulatory, launch, investor_day, conference (trade shows, keynote slots, sell-side conferences, webcast-only conference tracks), partnership (JVs, OEM, major customer or collaboration deals), corporate (M&A, spin-offs, reorgs, financings, proxy votes), macro, legal, other.",
-      "Roadmap or target milestones are allowed when supported by company statements, filings, transcripts, regulator pages, exchange calendars, or credible reporting. Use status 'likely' or 'speculative' and lower confidence when timing is inferred from a target, cadence, or historical calendar pattern.",
-      "Do not require exact dates. Use expectedDate for exact dates, windowStart/windowEnd for month/quarter/season/year-end windows, and datePrecision to show how specific the timing is.",
-      "Exclude stale past events unless a source clearly supports a future recurrence or future milestone.",
-      "Return up to 12 highest-impact events, ordered chronologically when timing is known.",
-      "Prefer confirmed company, exchange, regulator, SEC, or investor relations sources over commentary.",
-      "When hosted search providers disagree, keep only events supported by concrete source snippets and prefer primary sources over provider summaries.",
-      "Use null for unknown company, exchange, publication date, or event date fields.",
-      "Copy source url, title, publisher, publishedAt, and quote from the snippets instead of paraphrasing source metadata.",
-      "summary: Factual what/when/context only, in 1–2 short sentences (or one tight sentence). Do not repeat the title, do not explain importance here, no bullet lists, no long hedging.",
-      "whyItMatters: One short sentence (two only if strictly necessary) on why the stock might move (e.g. guidance, multiple, regulatory binary, demand). Do not restate the full summary.",
-      "Candidate leads detected from the snippets:",
-      JSON.stringify(candidates, null, 2),
-      "Source snippets:",
-      JSON.stringify(snippets, null, 2),
-    ].join("\n\n"),
+    prompt,
   })
 
   return normalizeCatalystResearchAi(output)

@@ -88,19 +88,23 @@ export const catalystEventAiSchema = z.object({
     .describe(
       "One short sentence (two only if necessary): why the stock might move (guidance, valuation, regulatory outcome, demand, etc.). Do not restate the summary.",
     ),
-  eventType: z.enum([
-    "earnings",
-    "product",
-    "regulatory",
-    "launch",
-    "investor_day",
-    "conference",
-    "partnership",
-    "corporate",
-    "macro",
-    "legal",
-    "other",
-  ]),
+  eventType: z
+    .enum([
+      "earnings",
+      "product",
+      "regulatory",
+      "launch",
+      "investor_day",
+      "conference",
+      "partnership",
+      "corporate",
+      "macro",
+      "legal",
+      "other",
+    ])
+    .describe(
+      "One primary label per distinct real-world milestone. If a flagship conference, keynote, or investor forum is also where launches are expected, prefer conference or investor_day over a second product or launch row for the same dates or official page.",
+    ),
   expectedDate: z
     .string()
     .nullable()
@@ -129,7 +133,12 @@ export const catalystResearchAiSchema = z.object({
     .string()
     .nullable()
     .describe("Exchange if supported by sources, otherwise null"),
-  events: z.array(catalystEventAiSchema).max(12),
+  events: z
+    .array(catalystEventAiSchema)
+    .max(12)
+    .describe(
+      "Distinct catalysts only; merge overlapping evidence about the same dated or named occurrence into a single event.",
+    ),
 })
 
 type CatalystResearchAi = z.infer<typeof catalystResearchAiSchema>
