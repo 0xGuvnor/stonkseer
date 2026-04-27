@@ -231,6 +231,46 @@ function isXPostPublisher(hostname: string) {
   return host === "x.com" || host === "twitter.com" || host.endsWith(".x.com")
 }
 
+/** Gateway/source metadata often uses the tweet id as `title`, which is not a display title. */
+function isTweetIdStyleTitle(value: string | undefined) {
+  if (!value) {
+    return true
+  }
+
+  const t = compactWhitespace(value)
+
+  return t.length === 0 || /^\d+$/.test(t)
+}
+
+function titleForXPostSnippet(
+  url: string,
+  author: string,
+  providerTitle: string | undefined
+) {
+  if (!isTweetIdStyleTitle(providerTitle)) {
+    return compactWhitespace(providerTitle!)
+  }
+
+  const a = compactWhitespace(author)
+
+  if (a) {
+    return `${a} on X`
+  }
+
+  try {
+    const path = new URL(url).pathname
+    const match = path.match(/^\/([^/]+)\/status\//)
+
+    if (match?.[1] && match[1] !== "i") {
+      return `@${match[1]} on X`
+    }
+  } catch {
+    // ignore
+  }
+
+  return "X post"
+}
+
 function isHostedSearchProvider(value: string): value is HostedSearchProvider {
   return HOSTED_SEARCH_PROVIDERS.includes(value as HostedSearchProvider)
 }
@@ -1144,8 +1184,7 @@ async function fetchXaiSearchSnippets(
         urls.push(url)
         snippets.push({
           url,
-          title:
-            sourceTitles.get(url) ?? (author ? `${author} on X` : "X post"),
+          title: titleForXPostSnippet(url, author, sourceTitles.get(url)),
           publisher,
           quote: quote.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
         })
@@ -1175,7 +1214,7 @@ async function fetchXaiSearchSnippets(
         fallbackFromSources += 1
         snippets.push({
           url,
-          title: source.title ?? url,
+          title: titleForXPostSnippet(url, "", source.title),
           publisher,
           quote: digest.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
         })
