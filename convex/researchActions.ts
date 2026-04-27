@@ -1,5 +1,11 @@
 "use node"
 
+import { anthropic } from "@ai-sdk/anthropic"
+import {
+  openai,
+  type OpenaiResponsesTextProviderMetadata,
+} from "@ai-sdk/openai"
+import { xai } from "@ai-sdk/xai"
 import { generateText, Output } from "ai"
 import { z } from "zod"
 
@@ -63,6 +69,16 @@ const WEB_SNIPPET_QUOTE_LENGTH = 1200
 const TICKER_VALIDATION_PROVIDER = "finnhub-profile2+quote+earnings"
 const VALID_TICKER_VALIDATION_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const INVALID_TICKER_VALIDATION_TTL_MS = 24 * 60 * 60 * 1000
+const HOSTED_SEARCH_PROVIDERS = [
+  "gemini",
+  "openai",
+  "anthropic",
+  "xai",
+] as const
+const OPENAI_SEARCH_CONTEXT_SIZES = ["low", "medium", "high"] as const
+
+type HostedSearchProvider = (typeof HOSTED_SEARCH_PROVIDERS)[number]
+type OpenAiSearchContextSize = (typeof OPENAI_SEARCH_CONTEXT_SIZES)[number]
 
 const tavilySearchSchema = z.object({
   results: z
@@ -73,7 +89,7 @@ const tavilySearchSchema = z.object({
         content: z.string().nullable().optional(),
         raw_content: z.string().nullable().optional(),
         published_date: z.string().nullable().optional(),
-      }),
+      })
     )
     .optional(),
 })
@@ -88,7 +104,7 @@ const geminiGroundedSearchSchema = z.object({
               .array(
                 z.object({
                   text: z.string().optional(),
-                }),
+                })
               )
               .optional(),
           })
@@ -104,16 +120,60 @@ const geminiGroundedSearchSchema = z.object({
                       title: z.string().optional(),
                     })
                     .optional(),
-                }),
+                })
               )
               .optional(),
             webSearchQueries: z.array(z.string()).optional(),
           })
           .optional(),
-      }),
+      })
     )
     .optional(),
 })
+
+const openAiWebSearchToolOutputSchema = z
+  .object({
+    sources: z
+      .array(
+        z.discriminatedUnion("type", [
+          z.object({
+            type: z.literal("url"),
+            url: z.string(),
+          }),
+          z.object({
+            type: z.literal("api"),
+            name: z.string(),
+          }),
+        ])
+      )
+      .optional(),
+  })
+  .passthrough()
+
+const anthropicWebSearchToolOutputSchema = z.array(
+  z.object({
+    type: z.literal("web_search_result"),
+    url: z.string(),
+    title: z.string().nullable(),
+    pageAge: z.string().nullable(),
+    encryptedContent: z.string(),
+  })
+)
+
+const xaiXSearchToolOutputSchema = z
+  .object({
+    posts: z
+      .array(
+        z.object({
+          author: z.string(),
+          text: z.string(),
+          url: z.string(),
+          likes: z.number(),
+        })
+      )
+      .optional(),
+  })
+  .passthrough()
 
 type TickerValidation = {
   isValid: boolean
@@ -155,6 +215,82 @@ function normalizeSourceUrl(value: string) {
   } catch {
     return value
   }
+}
+
+function publisherFromUrl(value: string) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "")
+  } catch {
+    return null
+  }
+}
+
+function isXPostPublisher(hostname: string) {
+  const host = hostname.replace(/^www\./, "").toLowerCase()
+
+  return host === "x.com" || host === "twitter.com" || host.endsWith(".x.com")
+}
+
+function isHostedSearchProvider(value: string): value is HostedSearchProvider {
+  return HOSTED_SEARCH_PROVIDERS.includes(value as HostedSearchProvider)
+}
+
+function enabledHostedSearchProviders(): HostedSearchProvider[] {
+  const rawProviders =
+    process.env.CATALYST_HOSTED_SEARCH_PROVIDERS?.trim() ||
+    process.env.CATALYST_HOSTED_SEARCH_PROVIDER
+
+  if (!rawProviders) {
+    return []
+  }
+
+  const providers: HostedSearchProvider[] = []
+  for (const provider of rawProviders.split(",")) {
+    const normalized = provider.trim().toLowerCase()
+
+    if (!isHostedSearchProvider(normalized) || providers.includes(normalized)) {
+      continue
+    }
+
+    providers.push(normalized)
+  }
+
+  return providers
+}
+
+function openAiSearchContextSize(): OpenAiSearchContextSize {
+  const value = process.env.CATALYST_OPENAI_SEARCH_CONTEXT_SIZE?.toLowerCase()
+
+  return OPENAI_SEARCH_CONTEXT_SIZES.includes(value as OpenAiSearchContextSize)
+    ? (value as OpenAiSearchContextSize)
+    : "medium"
+}
+
+function anthropicWebSearchMaxUses() {
+  const value = Number(process.env.CATALYST_ANTHROPIC_WEB_SEARCH_MAX_USES)
+
+  return Number.isInteger(value) && value > 0 ? value : 5
+}
+
+function dedupeSnippetsByUrl(snippets: SourceSnippet[], max: number) {
+  const seen = new Set<string>()
+  const unique: SourceSnippet[] = []
+
+  for (const snippet of snippets) {
+    const normalizedUrl = normalizeSourceUrl(snippet.url)
+
+    if (seen.has(normalizedUrl)) {
+      continue
+    }
+
+    seen.add(normalizedUrl)
+    unique.push({
+      ...snippet,
+      url: normalizedUrl,
+    })
+  }
+
+  return diversifySnippetsByDomain(unique, max)
 }
 
 function formatFinnhubEarningsRow(row: Record<string, unknown>) {
@@ -199,13 +335,13 @@ async function fetchFinnhubMarketContext(symbol: string): Promise<{
 
   const token = encodeURIComponent(apiKey)
   const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(
-    symbol,
+    symbol
   )}&token=${token}`
   const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(
-    symbol,
+    symbol
   )}&token=${token}`
   const earningsUrl = `https://finnhub.io/api/v1/stock/earnings?symbol=${encodeURIComponent(
-    symbol,
+    symbol
   )}&token=${token}`
 
   const [profileResponse, quoteResponse, earningsResponse] = await Promise.all([
@@ -262,10 +398,7 @@ async function fetchFinnhubMarketContext(symbol: string): Promise<{
     typeof quoteParsed?.t === "number" && typeof quoteParsed?.c === "number"
 
   const isValid = Boolean(
-    companyName ||
-      exchange ||
-      profileTicker === symbol ||
-      hasRealtimePrice,
+    companyName || exchange || profileTicker === symbol || hasRealtimePrice
   )
 
   const snippets: SourceSnippet[] = []
@@ -343,7 +476,7 @@ async function fetchFinnhubMarketContext(symbol: string): Promise<{
 async function validateTicker(
   ctx: ActionCtx,
   symbol: string,
-  now: number,
+  now: number
 ): Promise<TickerValidation> {
   if (!isTickerSymbolSyntaxValid(symbol)) {
     return { isValid: false }
@@ -396,7 +529,7 @@ async function fetchWebSearchSnippets(
   companyWebsite: string | undefined,
   now: number,
   selectedPlan: SearchQuery[],
-  queryPlan?: SearchQuery[],
+  queryPlan?: SearchQuery[]
 ): Promise<{
   snippets: SourceSnippet[]
   diagnostics: SearchQueryDiagnostic[]
@@ -538,7 +671,9 @@ async function fetchWebSearchSnippets(
 
     for (const result of parsed.data.results ?? []) {
       resultCount += 1
-      const quote = compactWhitespace(result.raw_content ?? result.content ?? "")
+      const quote = compactWhitespace(
+        result.raw_content ?? result.content ?? ""
+      )
 
       if (!result.url || !result.title || !quote) {
         continue
@@ -589,18 +724,12 @@ async function fetchWebSearchSnippets(
   }
 }
 
-function hostedSearchProvider() {
-  const provider = process.env.CATALYST_HOSTED_SEARCH_PROVIDER?.toLowerCase()
-
-  return provider === "gemini" ? provider : null
-}
-
 function buildGroundedSearchPrompt(
   symbol: string,
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
-  selectedPlan: SearchQuery[],
+  selectedPlan: SearchQuery[]
 ) {
   const today = new Date(now).toISOString().slice(0, 10)
   const companyLabel = companyName ? `${companyName} (${symbol})` : symbol
@@ -623,12 +752,473 @@ function buildGroundedSearchPrompt(
     .join("\n\n")
 }
 
+function collectOpenAiCitationSources(
+  content: readonly { type: string; providerMetadata?: unknown }[]
+) {
+  const sources = new Map<string, string | undefined>()
+
+  for (const part of content) {
+    if (part.type !== "text") {
+      continue
+    }
+
+    const metadata = part.providerMetadata as
+      | OpenaiResponsesTextProviderMetadata
+      | undefined
+
+    for (const annotation of metadata?.openai?.annotations ?? []) {
+      if (annotation.type !== "url_citation") {
+        continue
+      }
+
+      sources.set(normalizeSourceUrl(annotation.url), annotation.title)
+    }
+  }
+
+  return sources
+}
+
+async function fetchOpenAiSearchSnippets(
+  symbol: string,
+  companyName: string | undefined,
+  industry: string | undefined,
+  now: number,
+  selectedPlan: SearchQuery[]
+): Promise<{
+  snippets: SourceSnippet[]
+  diagnostics: SearchQueryDiagnostic[]
+}> {
+  const model = process.env.CATALYST_OPENAI_SEARCH_MODEL
+  const prompt = buildGroundedSearchPrompt(
+    symbol,
+    companyName,
+    industry,
+    now,
+    selectedPlan
+  )
+  const diagnosticBase = {
+    bucket: "market_news" as const,
+    query: `OpenAI web search: ${symbol}`,
+    maxResults: 10,
+    topic: "general" as const,
+  }
+
+  if (!model) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: "Missing CATALYST_OPENAI_SEARCH_MODEL for OpenAI web search",
+        },
+      ],
+    }
+  }
+
+  try {
+    const result = await generateText({
+      model,
+      tools: {
+        web_search: openai.tools.webSearch({
+          externalWebAccess: true,
+          searchContextSize: openAiSearchContextSize(),
+        }),
+      },
+      toolChoice: { type: "tool", toolName: "web_search" },
+      prompt,
+    })
+    const digest = compactWhitespace(result.text)
+    const sourceTitles = new Map<string, string | undefined>()
+
+    for (const source of result.sources) {
+      if (source.sourceType !== "url") {
+        continue
+      }
+
+      sourceTitles.set(normalizeSourceUrl(source.url), source.title)
+    }
+
+    for (const [url, title] of collectOpenAiCitationSources(result.content)) {
+      sourceTitles.set(url, title ?? sourceTitles.get(url))
+    }
+
+    for (const toolResult of result.toolResults) {
+      if (toolResult.toolName !== "web_search") {
+        continue
+      }
+
+      const parsedOutput = openAiWebSearchToolOutputSchema.safeParse(
+        toolResult.output
+      )
+
+      if (!parsedOutput.success) {
+        continue
+      }
+
+      for (const source of parsedOutput.data.sources ?? []) {
+        if (source.type !== "url") {
+          continue
+        }
+
+        const normalizedUrl = normalizeSourceUrl(source.url)
+        sourceTitles.set(normalizedUrl, sourceTitles.get(normalizedUrl))
+      }
+    }
+
+    const snippets: SourceSnippet[] = []
+    const urls: string[] = []
+
+    for (const [url, title] of sourceTitles) {
+      const publisher = publisherFromUrl(url)
+
+      if (!publisher || !digest) {
+        continue
+      }
+
+      urls.push(url)
+      snippets.push({
+        url,
+        title: title ?? url,
+        publisher,
+        quote: digest.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
+      })
+    }
+
+    return {
+      snippets,
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: sourceTitles.size,
+          keptCount: snippets.length,
+          urls: urls.slice(0, MAX_DIAGNOSTIC_URLS_PER_QUERY),
+        },
+      ],
+    }
+  } catch (err) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: err instanceof Error ? err.message : String(err),
+        },
+      ],
+    }
+  }
+}
+
+async function fetchAnthropicSearchSnippets(
+  symbol: string,
+  companyName: string | undefined,
+  industry: string | undefined,
+  now: number,
+  selectedPlan: SearchQuery[]
+): Promise<{
+  snippets: SourceSnippet[]
+  diagnostics: SearchQueryDiagnostic[]
+}> {
+  const model = process.env.CATALYST_ANTHROPIC_SEARCH_MODEL
+  const prompt = buildGroundedSearchPrompt(
+    symbol,
+    companyName,
+    industry,
+    now,
+    selectedPlan
+  )
+  const diagnosticBase = {
+    bucket: "market_news" as const,
+    query: `Anthropic web search: ${symbol}`,
+    maxResults: 10,
+    topic: "general" as const,
+  }
+
+  if (!model) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error:
+            "Missing CATALYST_ANTHROPIC_SEARCH_MODEL for Anthropic web search",
+        },
+      ],
+    }
+  }
+
+  try {
+    const result = await generateText({
+      model,
+      tools: {
+        web_search: anthropic.tools.webSearch_20260209({
+          maxUses: anthropicWebSearchMaxUses(),
+        }),
+      },
+      toolChoice: { type: "tool", toolName: "web_search" },
+      prompt,
+    })
+    const digest = compactWhitespace(result.text)
+    const sourceTitles = new Map<string, string | undefined>()
+    let resultCount = 0
+
+    for (const source of result.sources) {
+      if (source.sourceType !== "url") {
+        continue
+      }
+
+      sourceTitles.set(normalizeSourceUrl(source.url), source.title)
+    }
+
+    for (const toolResult of result.toolResults) {
+      if (toolResult.toolName !== "web_search") {
+        continue
+      }
+
+      const parsedOutput = anthropicWebSearchToolOutputSchema.safeParse(
+        toolResult.output
+      )
+
+      if (!parsedOutput.success) {
+        continue
+      }
+
+      resultCount += parsedOutput.data.length
+
+      for (const source of parsedOutput.data) {
+        const normalizedUrl = normalizeSourceUrl(source.url)
+        sourceTitles.set(
+          normalizedUrl,
+          source.title ?? sourceTitles.get(normalizedUrl)
+        )
+      }
+    }
+
+    const snippets: SourceSnippet[] = []
+    const urls: string[] = []
+
+    for (const [url, title] of sourceTitles) {
+      const publisher = publisherFromUrl(url)
+
+      if (!publisher || !digest) {
+        continue
+      }
+
+      urls.push(url)
+      snippets.push({
+        url,
+        title: title ?? url,
+        publisher,
+        quote: digest.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
+      })
+    }
+
+    return {
+      snippets,
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: resultCount || sourceTitles.size,
+          keptCount: snippets.length,
+          urls: urls.slice(0, MAX_DIAGNOSTIC_URLS_PER_QUERY),
+        },
+      ],
+    }
+  } catch (err) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: err instanceof Error ? err.message : String(err),
+        },
+      ],
+    }
+  }
+}
+
+async function fetchXaiSearchSnippets(
+  symbol: string,
+  companyName: string | undefined,
+  industry: string | undefined,
+  now: number,
+  selectedPlan: SearchQuery[]
+): Promise<{
+  snippets: SourceSnippet[]
+  diagnostics: SearchQueryDiagnostic[]
+}> {
+  const model = process.env.CATALYST_XAI_SEARCH_MODEL
+  const prompt = buildGroundedSearchPrompt(
+    symbol,
+    companyName,
+    industry,
+    now,
+    selectedPlan
+  )
+  const diagnosticBase = {
+    bucket: "market_news" as const,
+    query: `xAI Grok X search: ${symbol}`,
+    maxResults: 10,
+    topic: "general" as const,
+  }
+
+  if (!model) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: "Missing CATALYST_XAI_SEARCH_MODEL for xAI Grok X search",
+        },
+      ],
+    }
+  }
+
+  try {
+    const result = await generateText({
+      model,
+      tools: {
+        x_search: xai.tools.xSearch({
+          enableImageUnderstanding: true,
+          enableVideoUnderstanding: true,
+        }),
+      },
+      toolChoice: { type: "tool", toolName: "x_search" },
+      prompt,
+    })
+    const sourceTitles = new Map<string, string | undefined>()
+
+    for (const source of result.sources) {
+      if (source.sourceType !== "url") {
+        continue
+      }
+
+      sourceTitles.set(normalizeSourceUrl(source.url), source.title)
+    }
+
+    const snippets: SourceSnippet[] = []
+    const urls: string[] = []
+    const seenUrls = new Set<string>()
+    let resultCount = 0
+
+    for (const toolResult of result.toolResults) {
+      if (toolResult.toolName !== "x_search") {
+        continue
+      }
+
+      const parsedOutput = xaiXSearchToolOutputSchema.safeParse(
+        toolResult.output
+      )
+
+      if (!parsedOutput.success) {
+        continue
+      }
+
+      resultCount += parsedOutput.data.posts?.length ?? 0
+
+      for (const post of parsedOutput.data.posts ?? []) {
+        const url = normalizeSourceUrl(post.url)
+        const publisher = publisherFromUrl(url)
+        const author = compactWhitespace(post.author)
+        const quote = compactWhitespace(post.text)
+
+        if (!publisher || !quote || seenUrls.has(url)) {
+          continue
+        }
+
+        seenUrls.add(url)
+        urls.push(url)
+        snippets.push({
+          url,
+          title:
+            sourceTitles.get(url) ?? (author ? `${author} on X` : "X post"),
+          publisher,
+          quote: quote.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
+        })
+      }
+    }
+
+    const digest = compactWhitespace(result.text)
+    let fallbackFromSources = 0
+
+    // Vercel AI Gateway can return x_search tool-call + `source` URL parts without
+    // normalized `tool-result` rows; reuse the model digest as the snippet quote.
+    if (snippets.length === 0 && digest) {
+      for (const source of result.sources) {
+        if (source.sourceType !== "url") {
+          continue
+        }
+
+        const url = normalizeSourceUrl(source.url)
+        const publisher = publisherFromUrl(url)
+
+        if (!publisher || !isXPostPublisher(publisher) || seenUrls.has(url)) {
+          continue
+        }
+
+        seenUrls.add(url)
+        urls.push(url)
+        fallbackFromSources += 1
+        snippets.push({
+          url,
+          title: source.title ?? url,
+          publisher,
+          quote: digest.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
+        })
+      }
+    }
+
+    if (resultCount === 0 && fallbackFromSources > 0) {
+      resultCount = fallbackFromSources
+    }
+
+    return {
+      snippets,
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount,
+          keptCount: snippets.length,
+          urls: urls.slice(0, MAX_DIAGNOSTIC_URLS_PER_QUERY),
+        },
+      ],
+    }
+  } catch (err) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: err instanceof Error ? err.message : String(err),
+        },
+      ],
+    }
+  }
+}
+
 async function fetchGeminiGroundedSearchSnippets(
   symbol: string,
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
-  selectedPlan: SearchQuery[],
+  selectedPlan: SearchQuery[]
 ): Promise<{
   snippets: SourceSnippet[]
   diagnostics: SearchQueryDiagnostic[]
@@ -640,7 +1230,7 @@ async function fetchGeminiGroundedSearchSnippets(
     companyName,
     industry,
     now,
-    selectedPlan,
+    selectedPlan
   )
   const diagnosticBase = {
     bucket: "market_news" as const,
@@ -669,7 +1259,7 @@ async function fetchGeminiGroundedSearchSnippets(
   try {
     response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-        model,
+        model
       )}:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: "POST",
@@ -685,7 +1275,7 @@ async function fetchGeminiGroundedSearchSnippets(
           ],
           tools: [{ google_search: {} }],
         }),
-      },
+      }
     )
   } catch (err) {
     return {
@@ -756,7 +1346,7 @@ async function fetchGeminiGroundedSearchSnippets(
     candidate?.content?.parts
       ?.map((part) => part.text)
       .filter((text): text is string => Boolean(text))
-      .join(" ") ?? "",
+      .join(" ") ?? ""
   )
   const snippets: SourceSnippet[] = []
   const urls: string[] = []
@@ -811,32 +1401,71 @@ async function fetchHostedSearchSnippets(
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
-  selectedPlan: SearchQuery[],
+  selectedPlan: SearchQuery[]
 ): Promise<{
   snippets: SourceSnippet[]
   diagnostics: SearchQueryDiagnostic[]
 }> {
-  const provider = hostedSearchProvider()
+  const providers = enabledHostedSearchProviders()
 
-  if (provider === "gemini") {
-    return await fetchGeminiGroundedSearchSnippets(
-      symbol,
-      companyName,
-      industry,
-      now,
-      selectedPlan,
-    )
+  if (providers.length === 0) {
+    return { snippets: [], diagnostics: [] }
   }
 
-  return { snippets: [], diagnostics: [] }
+  const results = await Promise.all(
+    providers.map((provider) => {
+      switch (provider) {
+        case "gemini":
+          return fetchGeminiGroundedSearchSnippets(
+            symbol,
+            companyName,
+            industry,
+            now,
+            selectedPlan
+          )
+        case "openai":
+          return fetchOpenAiSearchSnippets(
+            symbol,
+            companyName,
+            industry,
+            now,
+            selectedPlan
+          )
+        case "anthropic":
+          return fetchAnthropicSearchSnippets(
+            symbol,
+            companyName,
+            industry,
+            now,
+            selectedPlan
+          )
+        case "xai":
+          return fetchXaiSearchSnippets(
+            symbol,
+            companyName,
+            industry,
+            now,
+            selectedPlan
+          )
+      }
+    })
+  )
+
+  return {
+    snippets: dedupeSnippetsByUrl(
+      results.flatMap((result) => result.snippets),
+      MAX_WEB_SNIPPETS
+    ),
+    diagnostics: results.flatMap((result) => result.diagnostics),
+  }
 }
 
 function buildDeterministicEvents(
   symbol: string,
-  snippets: SourceSnippet[],
+  snippets: SourceSnippet[]
 ): CatalystResearch["events"] {
   const earningsSnippet = snippets.find((snippet) =>
-    snippet.quote.toLowerCase().includes("earnings"),
+    snippet.quote.toLowerCase().includes("earnings")
   )
 
   if (!earningsSnippet) {
@@ -873,7 +1502,7 @@ async function buildAiEvents(
   symbol: string,
   snippets: SourceSnippet[],
   candidates: ResearchCandidate[],
-  now: number,
+  now: number
 ): Promise<CatalystResearch | null> {
   const model = process.env.AI_GATEWAY_MODEL
 
@@ -899,6 +1528,7 @@ async function buildAiEvents(
       "Exclude stale past events unless a source clearly supports a future recurrence or future milestone.",
       "Return up to 12 highest-impact events, ordered chronologically when timing is known.",
       "Prefer confirmed company, exchange, regulator, SEC, or investor relations sources over commentary.",
+      "When hosted search providers disagree, keep only events supported by concrete source snippets and prefer primary sources over provider summaries.",
       "Use null for unknown company, exchange, publication date, or event date fields.",
       "Copy source url, title, publisher, publishedAt, and quote from the snippets instead of paraphrasing source metadata.",
       "Candidate leads detected from the snippets:",
@@ -945,7 +1575,7 @@ export const requestAuthenticatedRun = action({
       {
         symbol,
         now: args.now,
-      },
+      }
     )
 
     return result
@@ -974,7 +1604,7 @@ export const requestAnonymousRun = action({
         anonymousIpHash: args.anonymousIpHash,
         dayKey: args.dayKey,
         now: args.now,
-      },
+      }
     )
 
     return result
@@ -1021,7 +1651,7 @@ export const runResearch = internalAction({
         companyNameForSearch,
         finnhub.companyWebsite,
         researchStartedAt,
-        finnhub.finnhubIndustry,
+        finnhub.finnhubIndustry
       )
       const webSearchQueryBudget =
         run.source === "anonymous"
@@ -1029,24 +1659,26 @@ export const runResearch = internalAction({
           : webSearchPlan.length
       const selectedWebSearchPlan = selectBalancedSearchPlan(
         webSearchPlan,
-        webSearchQueryBudget,
+        webSearchQueryBudget
       )
 
-      const webResearch = await fetchWebSearchSnippets(
-        run.symbol,
-        companyNameForSearch,
-        finnhub.companyWebsite,
-        researchStartedAt,
-        selectedWebSearchPlan,
-        webSearchPlan,
-      )
-      const hostedResearch = await fetchHostedSearchSnippets(
-        run.symbol,
-        companyNameForSearch,
-        finnhub.finnhubIndustry,
-        researchStartedAt,
-        selectedWebSearchPlan,
-      )
+      const [webResearch, hostedResearch] = await Promise.all([
+        fetchWebSearchSnippets(
+          run.symbol,
+          companyNameForSearch,
+          finnhub.companyWebsite,
+          researchStartedAt,
+          selectedWebSearchPlan,
+          webSearchPlan
+        ),
+        fetchHostedSearchSnippets(
+          run.symbol,
+          companyNameForSearch,
+          finnhub.finnhubIndustry,
+          researchStartedAt,
+          selectedWebSearchPlan
+        ),
+      ])
       const snippets = [
         ...finnhub.snippets,
         ...hostedResearch.snippets,
@@ -1057,7 +1689,7 @@ export const runResearch = internalAction({
         run.symbol,
         snippets,
         candidates,
-        researchStartedAt,
+        researchStartedAt
       )
       const events =
         aiResearch?.events ?? buildDeterministicEvents(run.symbol, snippets)
@@ -1071,12 +1703,9 @@ export const runResearch = internalAction({
           snippetCount: snippets.length,
           candidateCount: candidates.length,
           extractionEventCount: events.length,
-          queries: [
-            ...hostedResearch.diagnostics,
-            ...webResearch.diagnostics,
-          ],
+          queries: [...hostedResearch.diagnostics, ...webResearch.diagnostics],
           candidates,
-        },
+        }
       )
 
       if (events.length === 0) {
@@ -1085,13 +1714,13 @@ export const runResearch = internalAction({
         if (missingConfig.length > 0) {
           throw new Error(
             `Missing broad research configuration in Convex env: ${missingConfig.join(
-              ", ",
-            )}.`,
+              ", "
+            )}.`
           )
         }
 
         throw new Error(
-          "No cited catalyst events found from the current web/news sources.",
+          "No cited catalyst events found from the current web/news sources."
         )
       }
 
@@ -1127,7 +1756,7 @@ export const refreshTrackedStocks = internalAction({
   handler: async (ctx) => {
     const queuedRunIds = await ctx.runMutation(
       internal.researchInternal.queueTrackedRefreshes,
-      { now: Date.now() },
+      { now: Date.now() }
     )
 
     for (const runId of queuedRunIds) {

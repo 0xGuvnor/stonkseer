@@ -6,7 +6,16 @@ import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import {
   Form,
   FormControl,
@@ -15,6 +24,14 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Table,
   TableBody,
@@ -37,25 +54,92 @@ import type {
 
 const NEW_PORTFOLIO_VALUE = "__new__"
 
+const SHORT_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const
+
+function ordinalSuffix(day: number): string {
+  const mod10 = day % 10
+  const mod100 = day % 100
+  if (mod100 >= 11 && mod100 <= 13) {
+    return "th"
+  }
+  if (mod10 === 1) {
+    return "st"
+  }
+  if (mod10 === 2) {
+    return "nd"
+  }
+  if (mod10 === 3) {
+    return "rd"
+  }
+  return "th"
+}
+
+/** Parses leading YYYY-MM-DD (optionally followed by time) as a calendar local date. */
+function tryFormatIsoDatePrefix(raw: string): string | null {
+  const s = raw.trim()
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
+  if (!match) {
+    return null
+  }
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (
+    !Number.isInteger(year) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return null
+  }
+  const d = new Date(year, month - 1, day)
+  if (
+    d.getFullYear() !== year ||
+    d.getMonth() !== month - 1 ||
+    d.getDate() !== day
+  ) {
+    return null
+  }
+  return `${day}${ordinalSuffix(day)} ${SHORT_MONTHS[d.getMonth()]} ${year}`
+}
+
+function formatTimingFragment(raw: string): string {
+  return tryFormatIsoDatePrefix(raw) ?? raw.trim()
+}
+
 function clientNowMs(): number {
   return Date.now()
 }
 
 function eventTimingLabel(event: CatalystEventView) {
   if (event.expectedDate) {
-    return event.expectedDate
+    return formatTimingFragment(event.expectedDate)
   }
 
   if (event.windowStart && event.windowEnd) {
-    return `${event.windowStart} to ${event.windowEnd}`
+    return `${formatTimingFragment(event.windowStart)} - ${formatTimingFragment(event.windowEnd)}`
   }
 
   if (event.windowStart) {
-    return `After ${event.windowStart}`
+    return `After ${formatTimingFragment(event.windowStart)}`
   }
 
   if (event.windowEnd) {
-    return `By ${event.windowEnd}`
+    return `By ${formatTimingFragment(event.windowEnd)}`
   }
 
   return event.datePrecision === "unknown"
@@ -194,247 +278,271 @@ export function HomeResearchClient() {
     )
   }
 
+  const portfolioList = portfolios ?? []
+  const saveTargetValue =
+    portfolioSelection || portfolioList[0]?._id || NEW_PORTFOLIO_VALUE
+
   return (
     <section className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-10">
       <div className="flex flex-col gap-6 md:flex-row md:items-stretch">
-        <div className="min-w-0 flex-1 rounded-3xl border bg-card p-6 shadow-sm">
-          <p className="mb-3 text-sm font-medium text-muted-foreground">
-            {clerkLoaded && isSignedIn
-              ? "Signed-in research uses your account limits instead of the one-time anonymous trial."
-              : "Anonymous users get one uncached ticker research run per day."}
-          </p>
-          <Form {...form}>
-            <form
-              className="flex flex-col gap-3 sm:flex-row sm:items-start"
-              onSubmit={form.handleSubmit(onResearchSubmit)}
-            >
-              <FormField
-                control={form.control}
-                name="symbol"
-                render={({ field }) => (
-                  <FormItem className="min-w-0 flex-1">
-                    <FormControl>
-                      <Input
-                        aria-label="Ticker symbol"
-                        autoComplete="off"
-                        className="uppercase"
-                        maxLength={10}
-                        placeholder="TSLA"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button
-                disabled={
-                  form.formState.isSubmitting ||
-                  !form.formState.isValid ||
-                  !clerkLoaded
-                }
-                type="submit"
+        <Card className="min-w-0 flex-1 shadow-sm">
+          <CardHeader>
+            <CardDescription>
+              {clerkLoaded && isSignedIn
+                ? "Signed-in research uses your account limits instead of the one-time anonymous trial."
+                : "Anonymous users get one uncached ticker research run per day."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Form {...form}>
+              <form
+                className="flex flex-col gap-3 sm:flex-row sm:items-start"
+                onSubmit={form.handleSubmit(onResearchSubmit)}
               >
-                {form.formState.isSubmitting ? "Starting..." : "Research"}
-              </Button>
-            </form>
-          </Form>
-          {message ? (
-            <p className="mt-4 rounded-md bg-muted px-3 py-2 text-sm">
-              {message}
-            </p>
-          ) : null}
-        </div>
-
-        <aside className="shrink-0 rounded-3xl border bg-card p-6 shadow-sm md:w-80">
-          <h2 className="mb-3 text-lg font-semibold">Portfolio tracking</h2>
-          <Show when="signed-out">
-            <p className="text-sm leading-6 text-muted-foreground">
-              Try one ticker first. When you want to save catalysts, sign in
-              with Google and create a portfolio.
-            </p>
-          </Show>
-          <Show when="signed-in">
-            <div className="space-y-4">
-              <label className="block text-sm font-medium">
-                Default portfolio name
-                <input
-                  className="mt-2 w-full rounded-md border bg-background px-3 py-2 text-sm ring-ring transition outline-none focus:ring-2"
-                  value={portfolioName}
-                  onChange={(event) => setPortfolioName(event.target.value)}
-                />
-              </label>
-              <label className="block text-sm font-medium">
-                Save target
-                <select
-                  className="mt-2 w-full rounded-md border bg-background px-3 py-2 text-sm ring-ring transition outline-none focus:ring-2"
-                  value={
-                    portfolioSelection ||
-                    portfolios?.[0]?._id ||
-                    NEW_PORTFOLIO_VALUE
-                  }
-                  onChange={(event) =>
-                    setPortfolioSelection(event.target.value)
-                  }
-                >
-                  {portfolios?.map((portfolio: PortfolioView) => (
-                    <option key={portfolio._id} value={portfolio._id}>
-                      {portfolio.name}
-                    </option>
-                  ))}
-                  <option value={NEW_PORTFOLIO_VALUE}>
-                    Create {portfolioName}
-                  </option>
-                </select>
-              </label>
-              <div>
-                <p className="mb-2 text-sm font-medium">Your portfolios</p>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  {portfolios?.length ? (
-                    portfolios.map((portfolio: PortfolioView) => (
-                      <p key={portfolio._id}>{portfolio.name}</p>
-                    ))
-                  ) : (
-                    <p>
-                      No portfolios yet. Saving a completed run will create one
-                      with every catalyst from that run.
-                    </p>
+                <FormField
+                  control={form.control}
+                  name="symbol"
+                  render={({ field }) => (
+                    <FormItem className="min-w-0 flex-1">
+                      <FormControl>
+                        <Input
+                          aria-label="Ticker symbol"
+                          autoComplete="off"
+                          className="uppercase"
+                          maxLength={10}
+                          placeholder="TSLA"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
+                />
+                <Button
+                  disabled={
+                    form.formState.isSubmitting ||
+                    !form.formState.isValid ||
+                    !clerkLoaded
+                  }
+                  type="submit"
+                >
+                  {form.formState.isSubmitting ? "Starting..." : "Research"}
+                </Button>
+              </form>
+            </Form>
+            {message ? (
+              <Alert>
+                <AlertDescription>{message}</AlertDescription>
+              </Alert>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <Card className="shrink-0 shadow-sm md:w-80">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold">
+              Portfolio tracking
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Show when="signed-out">
+              <Alert>
+                <AlertDescription>
+                  Try one ticker first. When you want to save catalysts, sign in
+                  with Google and create a portfolio.
+                </AlertDescription>
+              </Alert>
+            </Show>
+            <Show when="signed-in">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="portfolio-default-name">
+                    Default portfolio name
+                  </Label>
+                  <Input
+                    id="portfolio-default-name"
+                    value={portfolioName}
+                    onChange={(event) => setPortfolioName(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="portfolio-save-target">Save target</Label>
+                  <Select
+                    value={saveTargetValue}
+                    onValueChange={setPortfolioSelection}
+                  >
+                    <SelectTrigger
+                      id="portfolio-save-target"
+                      className="w-full min-w-0"
+                    >
+                      <SelectValue placeholder="Choose a portfolio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {portfolioList.map((portfolio: PortfolioView) => (
+                        <SelectItem key={portfolio._id} value={portfolio._id}>
+                          {portfolio.name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value={NEW_PORTFOLIO_VALUE}>
+                        Create {portfolioName}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm leading-snug font-medium">
+                    Your portfolios
+                  </p>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    {portfolioList.length > 0 ? (
+                      portfolioList.map((portfolio: PortfolioView) => (
+                        <p key={portfolio._id}>{portfolio.name}</p>
+                      ))
+                    ) : (
+                      <p>
+                        No portfolios yet. Saving a completed run will create
+                        one with every catalyst from that run.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </Show>
-        </aside>
+            </Show>
+          </CardContent>
+        </Card>
       </div>
 
       {results ? (
-        <div className="rounded-3xl border bg-card p-6 shadow-sm">
-          <div className="mb-5 flex items-start justify-between gap-4">
+        <Card className="shadow-sm">
+          <CardHeader>
             <div>
-              <h2 className="text-xl font-semibold">
+              <CardTitle className="text-xl font-semibold">
                 {results.run.symbol} catalyst research
-              </h2>
-              <p className="text-sm text-muted-foreground">
+              </CardTitle>
+              <CardDescription>
                 Status: {results.run.status}
                 {results.run.cacheHit ? " (cached)" : ""}
-              </p>
+              </CardDescription>
             </div>
             {results.run.status === "completed" && results.events.length > 0 ? (
-              <Button onClick={handleSave}>Save to portfolio</Button>
+              <CardAction>
+                <Button onClick={handleSave}>Save to portfolio</Button>
+              </CardAction>
             ) : null}
-          </div>
+          </CardHeader>
 
-          {results.run.error ? (
-            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm">
-              {results.run.error}
-            </p>
-          ) : null}
+          <CardContent className="space-y-4">
+            {results.run.error ? (
+              <Alert variant="destructive">
+                <AlertDescription>{results.run.error}</AlertDescription>
+              </Alert>
+            ) : null}
 
-          {results.run.status !== "completed" ? (
-            <p className="text-sm text-muted-foreground">
-              Research is queued or running. Results will appear here when
-              Convex updates the run.
-            </p>
-          ) : null}
+            {results.run.status !== "completed" ? (
+              <Alert>
+                <AlertDescription>
+                  Research is queued or running. Results will appear here when
+                  Convex updates the run.
+                </AlertDescription>
+              </Alert>
+            ) : null}
 
-          {results.events.length > 0 ? (
-            <Table className="min-w-[880px]">
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                    Catalyst
-                  </TableHead>
-                  <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                    Why it matters
-                  </TableHead>
-                  <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                    When
-                  </TableHead>
-                  <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                    Type
-                  </TableHead>
-                  <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                    Status
-                  </TableHead>
-                  <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                    Impact
-                  </TableHead>
-                  <TableHead className="text-right text-xs tracking-wide text-muted-foreground uppercase">
-                    Conf.
-                  </TableHead>
-                  <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                    Sources
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {results.events.map((event: CatalystEventView) => {
-                  const sourcesTitle = event.sources
-                    .map((s) => `${s.publisher}: ${s.title}`)
-                    .join("\n")
-                  const primary = event.sources[0]
+            {results.events.length > 0 ? (
+              <Table className="min-w-[760px]">
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                      Catalyst
+                    </TableHead>
+                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                      Why it matters
+                    </TableHead>
+                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                      When
+                    </TableHead>
+                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                      Type
+                    </TableHead>
+                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                      Status
+                    </TableHead>
+                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                      Impact
+                    </TableHead>
+                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                      Sources
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {results.events.map((event: CatalystEventView) => {
+                    const sourcesTitle = event.sources
+                      .map((s) => `${s.publisher}: ${s.title}`)
+                      .join("\n")
+                    const primary = event.sources[0]
 
-                  return (
-                    <TableRow key={event._id}>
-                      <TableCell className="max-w-md align-top whitespace-normal">
-                        <div className="space-y-2">
-                          <div className="font-medium">{event.title}</div>
-                          {event.summary.trim() ? (
-                            <p className="text-sm leading-snug font-normal text-muted-foreground">
-                              {event.summary}
-                            </p>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
-                        {event.whyItMatters.trim() ? (
-                          event.whyItMatters
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell
-                        className="max-w-56 align-top whitespace-normal text-muted-foreground"
-                        title={eventTimingLabel(event)}
-                      >
-                        {eventTimingLabel(event)}
-                      </TableCell>
-                      <TableCell className="max-w-40 align-top whitespace-normal">
-                        {event.eventType}
-                      </TableCell>
-                      <TableCell className="max-w-40 align-top whitespace-normal text-muted-foreground">
-                        {event.status}
-                      </TableCell>
-                      <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
-                        {event.expectedImpact}
-                      </TableCell>
-                      <TableCell className="text-right align-top whitespace-normal text-muted-foreground tabular-nums">
-                        {Math.round(event.confidence * 100)}%
-                      </TableCell>
-                      <TableCell className="align-top whitespace-normal">
-                        {primary ? (
-                          <a
-                            className="text-primary underline-offset-4 hover:underline"
-                            href={primary.url}
-                            rel="noreferrer"
-                            target="_blank"
-                            title={sourcesTitle || undefined}
-                          >
-                            {event.sources.length > 1
-                              ? `${event.sources.length} links`
-                              : "Link"}
-                          </a>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          ) : null}
-        </div>
+                    return (
+                      <TableRow key={event._id}>
+                        <TableCell className="max-w-md align-top whitespace-normal">
+                          <div className="space-y-2">
+                            <div className="font-medium">{event.title}</div>
+                            {event.summary.trim() ? (
+                              <p className="text-sm leading-snug font-normal text-muted-foreground">
+                                {event.summary}
+                              </p>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
+                          {event.whyItMatters.trim() ? (
+                            event.whyItMatters
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-56 align-top whitespace-normal text-muted-foreground">
+                          {eventTimingLabel(event)}
+                        </TableCell>
+                        <TableCell className="max-w-40 align-top whitespace-normal">
+                          {event.eventType}
+                        </TableCell>
+                        <TableCell className="max-w-40 align-top whitespace-normal text-muted-foreground">
+                          {event.status}
+                        </TableCell>
+                        <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
+                          {event.expectedImpact}
+                        </TableCell>
+                        <TableCell className="align-top whitespace-normal">
+                          {primary ? (
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="h-auto min-h-0 p-0 font-normal"
+                              asChild
+                            >
+                              <a
+                                href={primary.url}
+                                rel="noreferrer"
+                                target="_blank"
+                                title={sourcesTitle || undefined}
+                              >
+                                {event.sources.length > 1
+                                  ? `${event.sources.length} links`
+                                  : "Link"}
+                              </a>
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            ) : null}
+          </CardContent>
+        </Card>
       ) : null}
     </section>
   )
