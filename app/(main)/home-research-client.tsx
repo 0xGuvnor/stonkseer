@@ -5,8 +5,10 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
+import { ArrowRight, Search, TrendingUp } from "lucide-react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -53,6 +55,17 @@ import type {
 } from "@/types/research-ui"
 
 const NEW_PORTFOLIO_VALUE = "__new__"
+
+const POPULAR_TICKERS = [
+  "AAPL",
+  "TSLA",
+  "NVDA",
+  "MSFT",
+  "META",
+  "GOOGL",
+  "AMD",
+  "AMZN",
+] as const
 
 const SHORT_MONTHS = [
   "Jan",
@@ -132,7 +145,7 @@ function formatEnumLabel(raw: string): string {
     .map((part) =>
       part.length === 0
         ? part
-        : part.charAt(0).toUpperCase() + part.slice(1).toLowerCase(),
+        : part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
     )
     .join(" ")
 }
@@ -299,8 +312,110 @@ export function HomeResearchClient() {
     portfolioSelection || portfolioList[0]?._id || NEW_PORTFOLIO_VALUE
 
   return (
-    <section className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-10">
-      <div className="flex flex-col gap-6 md:flex-row md:items-stretch">
+    <section className="flex w-full flex-col gap-8 pb-10">
+      <div className="flex flex-col items-center px-6 pt-6 md:pt-10">
+        <Badge variant="secondary" className="mb-5 px-3 py-1">
+          AI-powered catalyst research
+        </Badge>
+        <h1 className="max-w-3xl text-center font-heading text-3xl font-semibold tracking-tight md:text-4xl">
+          What&apos;s moving your{" "}
+          <span className="bg-linear-to-r from-primary to-chart-2 bg-clip-text text-transparent">
+            stonks?
+          </span>
+        </h1>
+        <p className="mt-4 max-w-xl text-center text-muted-foreground">
+          Enter any ticker to get AI-researched catalysts for the next 12 months
+          — earnings, product launches, regulatory events, and more.
+        </p>
+
+        <Form {...form}>
+          <form
+            className="mt-8 w-full max-w-xl"
+            onSubmit={form.handleSubmit(onResearchSubmit)}
+          >
+            <FormField
+              control={form.control}
+              name="symbol"
+              render={({ field }) => (
+                <FormItem>
+                  <div className="relative flex w-full items-center">
+                    <Search
+                      aria-hidden
+                      className="pointer-events-none absolute left-4 size-5 text-muted-foreground"
+                    />
+                    <FormControl>
+                      <Input
+                        aria-label="Ticker symbol"
+                        autoComplete="off"
+                        className="h-14 rounded-full border pr-14 pl-12 uppercase shadow-sm"
+                        maxLength={10}
+                        placeholder="Enter a ticker, e.g. AAPL"
+                        {...field}
+                      />
+                    </FormControl>
+                    <Button
+                      aria-label={
+                        form.formState.isSubmitting
+                          ? "Starting research"
+                          : "Research"
+                      }
+                      className="absolute top-1/2 right-2 size-10 -translate-y-1/2 rounded-full"
+                      disabled={
+                        form.formState.isSubmitting ||
+                        !form.formState.isValid ||
+                        !clerkLoaded
+                      }
+                      size="icon"
+                      type="submit"
+                    >
+                      <ArrowRight className="size-5" />
+                    </Button>
+                  </div>
+                  <FormMessage className="text-center" />
+                </FormItem>
+              )}
+            />
+          </form>
+        </Form>
+
+        <div className="mt-10 flex w-full max-w-xl flex-col gap-3">
+          <div className="flex items-center justify-center gap-2 text-muted-foreground">
+            <TrendingUp aria-hidden className="size-4 shrink-0" />
+            <span className="text-[0.65rem] font-semibold tracking-[0.2em] uppercase">
+              Popular
+            </span>
+          </div>
+          <div className="flex flex-wrap justify-center gap-2">
+            {POPULAR_TICKERS.map((symbol) => (
+              <Button
+                key={symbol}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-full px-3 font-medium"
+                onClick={() =>
+                  form.setValue("symbol", symbol, {
+                    shouldValidate: true,
+                    shouldDirty: true,
+                  })
+                }
+              >
+                {symbol}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {message ? (
+        <div className="mx-auto w-full max-w-5xl px-6">
+          <Alert>
+            <AlertDescription>{message}</AlertDescription>
+          </Alert>
+        </div>
+      ) : null}
+
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 md:flex-row md:items-stretch">
         <Card className="min-w-0 flex-1 shadow-sm">
           <CardHeader>
             <CardDescription>
@@ -309,49 +424,6 @@ export function HomeResearchClient() {
                 : "Anonymous users get one uncached ticker research run per day."}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <Form {...form}>
-              <form
-                className="flex flex-col gap-3 sm:flex-row sm:items-start"
-                onSubmit={form.handleSubmit(onResearchSubmit)}
-              >
-                <FormField
-                  control={form.control}
-                  name="symbol"
-                  render={({ field }) => (
-                    <FormItem className="min-w-0 flex-1">
-                      <FormControl>
-                        <Input
-                          aria-label="Ticker symbol"
-                          autoComplete="off"
-                          className="uppercase"
-                          maxLength={10}
-                          placeholder="TSLA"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button
-                  disabled={
-                    form.formState.isSubmitting ||
-                    !form.formState.isValid ||
-                    !clerkLoaded
-                  }
-                  type="submit"
-                >
-                  {form.formState.isSubmitting ? "Starting..." : "Research"}
-                </Button>
-              </form>
-            </Form>
-            {message ? (
-              <Alert>
-                <AlertDescription>{message}</AlertDescription>
-              </Alert>
-            ) : null}
-          </CardContent>
         </Card>
 
         <Card className="shrink-0 shadow-sm md:w-80">
@@ -429,128 +501,131 @@ export function HomeResearchClient() {
       </div>
 
       {results ? (
-        <Card className="shadow-sm">
-          <CardHeader>
-            <div>
-              <CardTitle className="text-xl font-semibold">
-                {results.run.symbol} catalyst research
-              </CardTitle>
-              <CardDescription>
-                Status: {results.run.status}
-                {results.run.cacheHit ? " (cached)" : ""}
-              </CardDescription>
-            </div>
-            {results.run.status === "completed" && results.events.length > 0 ? (
-              <CardAction>
-                <Button onClick={handleSave}>Save to portfolio</Button>
-              </CardAction>
-            ) : null}
-          </CardHeader>
+        <div className="mx-auto w-full max-w-5xl px-6">
+          <Card className="shadow-sm">
+            <CardHeader>
+              <div>
+                <CardTitle className="text-xl font-semibold">
+                  {results.run.symbol} catalyst research
+                </CardTitle>
+                <CardDescription>
+                  Status: {results.run.status}
+                  {results.run.cacheHit ? " (cached)" : ""}
+                </CardDescription>
+              </div>
+              {results.run.status === "completed" &&
+              results.events.length > 0 ? (
+                <CardAction>
+                  <Button onClick={handleSave}>Save to portfolio</Button>
+                </CardAction>
+              ) : null}
+            </CardHeader>
 
-          <CardContent className="space-y-4">
-            {results.run.error ? (
-              <Alert variant="destructive">
-                <AlertDescription>{results.run.error}</AlertDescription>
-              </Alert>
-            ) : null}
+            <CardContent className="space-y-4">
+              {results.run.error ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{results.run.error}</AlertDescription>
+                </Alert>
+              ) : null}
 
-            {results.run.status !== "completed" ? (
-              <Alert>
-                <AlertDescription>
-                  Research is queued or running. Results will appear here when
-                  Convex updates the run.
-                </AlertDescription>
-              </Alert>
-            ) : null}
+              {results.run.status !== "completed" ? (
+                <Alert>
+                  <AlertDescription>
+                    Research is queued or running. Results will appear here when
+                    Convex updates the run.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
 
-            {results.events.length > 0 ? (
-              <Table className="min-w-[640px]">
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                      Catalyst
-                    </TableHead>
-                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                      Why it matters
-                    </TableHead>
-                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                      When
-                    </TableHead>
-                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                      Type
-                    </TableHead>
-                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                      Impact
-                    </TableHead>
-                    <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                      Sources
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {results.events.map((event: CatalystEventView) => (
-                    <TableRow key={event._id}>
-                      <TableCell className="max-w-md align-top whitespace-normal">
-                        <div className="space-y-2">
-                          <div className="font-medium">{event.title}</div>
-                          {event.summary.trim() ? (
-                            <p className="text-sm leading-snug font-normal text-muted-foreground">
-                              {event.summary}
-                            </p>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
-                        {event.whyItMatters.trim() ? (
-                          event.whyItMatters
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="max-w-56 align-top whitespace-normal text-muted-foreground">
-                        {eventTimingLabel(event)}
-                      </TableCell>
-                      <TableCell className="max-w-40 align-top whitespace-normal">
-                        {formatEnumLabel(event.eventType)}
-                      </TableCell>
-                      <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
-                        {formatEnumLabel(event.expectedImpact)}
-                      </TableCell>
-                      <TableCell className="align-top whitespace-normal">
-                        {event.sources.length > 0 ? (
-                          <div className="flex flex-col items-start gap-1">
-                            {event.sources.map((source) => (
-                              <Button
-                                key={source._id}
-                                variant="link"
-                                size="sm"
-                                className="h-auto min-h-0 p-0 font-normal"
-                                asChild
-                              >
-                                <a
-                                  href={source.url}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                  title={`${source.publisher}: ${source.title}`}
-                                >
-                                  <span className="max-w-[12rem] truncate">
-                                    {source.publisher}
-                                  </span>
-                                </a>
-                              </Button>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
+              {results.events.length > 0 ? (
+                <Table className="min-w-[640px]">
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                        Catalyst
+                      </TableHead>
+                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                        Why it matters
+                      </TableHead>
+                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                        When
+                      </TableHead>
+                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                        Type
+                      </TableHead>
+                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                        Impact
+                      </TableHead>
+                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                        Sources
+                      </TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : null}
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {results.events.map((event: CatalystEventView) => (
+                      <TableRow key={event._id}>
+                        <TableCell className="max-w-md align-top whitespace-normal">
+                          <div className="space-y-2">
+                            <div className="font-medium">{event.title}</div>
+                            {event.summary.trim() ? (
+                              <p className="text-sm leading-snug font-normal text-muted-foreground">
+                                {event.summary}
+                              </p>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
+                          {event.whyItMatters.trim() ? (
+                            event.whyItMatters
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-56 align-top whitespace-normal text-muted-foreground">
+                          {eventTimingLabel(event)}
+                        </TableCell>
+                        <TableCell className="max-w-40 align-top whitespace-normal">
+                          {formatEnumLabel(event.eventType)}
+                        </TableCell>
+                        <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
+                          {formatEnumLabel(event.expectedImpact)}
+                        </TableCell>
+                        <TableCell className="align-top whitespace-normal">
+                          {event.sources.length > 0 ? (
+                            <div className="flex flex-col items-start gap-1">
+                              {event.sources.map((source) => (
+                                <Button
+                                  key={source._id}
+                                  variant="link"
+                                  size="sm"
+                                  className="h-auto min-h-0 p-0 font-normal"
+                                  asChild
+                                >
+                                  <a
+                                    href={source.url}
+                                    rel="noreferrer"
+                                    target="_blank"
+                                    title={`${source.publisher}: ${source.title}`}
+                                  >
+                                    <span className="max-w-48 truncate">
+                                      {source.publisher}
+                                    </span>
+                                  </a>
+                                </Button>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
       ) : null}
     </section>
   )
