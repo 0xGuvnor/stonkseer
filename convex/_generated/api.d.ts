@@ -9,6 +9,7 @@
  */
 
 import type * as crons from "../crons.js";
+import type * as devData from "../devData.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as portfolios from "../portfolios.js";
 import type * as research from "../research.js";
@@ -25,6 +26,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   crons: typeof crons;
+  devData: typeof devData;
   "lib/auth": typeof lib_auth;
   portfolios: typeof portfolios;
   research: typeof research;
