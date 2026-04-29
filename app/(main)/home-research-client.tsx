@@ -134,22 +134,6 @@ function formatTimingFragment(raw: string): string {
   return tryFormatIsoDatePrefix(raw) ?? raw.trim()
 }
 
-/** First letter of each word upper (snake_case → spaced words). */
-function formatEnumLabel(raw: string): string {
-  const trimmed = raw.trim()
-  if (!trimmed) {
-    return raw
-  }
-  return trimmed
-    .split("_")
-    .map((part) =>
-      part.length === 0
-        ? part
-        : part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
-    )
-    .join(" ")
-}
-
 function clientNowMs(): number {
   return Date.now()
 }
@@ -174,6 +158,69 @@ function eventTimingLabel(event: CatalystEventView) {
   return event.datePrecision === "unknown"
     ? "Timing unknown"
     : `Timing: ${event.datePrecision}`
+}
+
+/** Local calendar date from leading YYYY-MM-DD, or null if not parseable. */
+function parseIsoPrefixToLocalDate(raw: string | undefined): Date | null {
+  if (!raw?.trim()) {
+    return null
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw.trim())
+  if (!match) {
+    return null
+  }
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (
+    !Number.isInteger(year) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return null
+  }
+  const d = new Date(year, month - 1, day)
+  if (
+    d.getFullYear() !== year ||
+    d.getMonth() !== month - 1 ||
+    d.getDate() !== day
+  ) {
+    return null
+  }
+  return d
+}
+
+/** Anchor date for quarter + sort: expectedDate, else windowStart, else windowEnd. */
+function parseAnchorDate(event: CatalystEventView): Date | null {
+  return (
+    parseIsoPrefixToLocalDate(event.expectedDate) ??
+    parseIsoPrefixToLocalDate(event.windowStart) ??
+    parseIsoPrefixToLocalDate(event.windowEnd)
+  )
+}
+
+function quarterKeyFromDate(d: Date): string {
+  return `${d.getFullYear()}-${Math.floor(d.getMonth() / 3)}`
+}
+
+function formatQuarterLabel(d: Date): string {
+  const q = Math.floor(d.getMonth() / 3) + 1
+  return `Q${q} ${d.getFullYear()}`
+}
+
+function sortCatalystEventsByAnchor(events: CatalystEventView[]) {
+  return [...events].sort((a, b) => {
+    const da = parseAnchorDate(a)
+    const db = parseAnchorDate(b)
+    const ta = da ? da.getTime() : Number.POSITIVE_INFINITY
+    const tb = db ? db.getTime() : Number.POSITIVE_INFINITY
+    if (ta !== tb) {
+      return ta - tb
+    }
+    return a._id < b._id ? -1 : a._id > b._id ? 1 : 0
+  })
 }
 
 export function HomeResearchClient() {
@@ -216,6 +263,10 @@ export function HomeResearchClient() {
     api.research.getRunResults,
     shouldLoadResults ? { runId, anonymousTokenHash } : "skip"
   )
+
+  const events = results?.events
+  const sortedCatalystEvents =
+    events && events.length > 0 ? sortCatalystEventsByAnchor(events) : []
 
   async function onResearchSubmit(values: ResearchFormValues) {
     const normalizedSymbol = values.symbol.trim().toUpperCase()
@@ -285,7 +336,7 @@ export function HomeResearchClient() {
       return
     }
 
-    const eventIds = results.events.map((event) => event._id)
+    const eventIds = sortedCatalystEvents.map((event) => event._id)
 
     setMessage(null)
     const selectedPortfolioValue =
@@ -315,7 +366,8 @@ export function HomeResearchClient() {
     <section className="flex w-full flex-col gap-8 pb-10">
       <div className="flex flex-col items-center px-6 pt-6 md:pt-10">
         <Badge variant="secondary" className="mb-5 px-3 py-1">
-          AI-powered catalyst research
+          <span className="size-1.5 animate-pulse rounded-full bg-green-500" />
+          AI-powered stocks catalyst research
         </Badge>
         <h1 className="max-w-3xl text-center font-heading text-3xl font-semibold tracking-tight md:text-4xl">
           What&apos;s moving your{" "}
@@ -538,88 +590,104 @@ export function HomeResearchClient() {
               ) : null}
 
               {results.events.length > 0 ? (
-                <Table className="min-w-[640px]">
+                <Table className="min-w-[860px]">
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                        Catalyst
+                      <TableHead className="w-22 min-w-22 text-xs tracking-wide text-muted-foreground uppercase">
+                        Quarter
                       </TableHead>
-                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                        Why it matters
+                      <TableHead className="max-w-44 text-xs tracking-wide text-muted-foreground uppercase">
+                        Expected timing
                       </TableHead>
-                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                        When
+                      <TableHead className="max-w-56 text-xs tracking-wide text-muted-foreground uppercase">
+                        Event / milestone
                       </TableHead>
-                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                        Type
+                      <TableHead className="max-w-xl min-w-48 text-xs tracking-wide text-muted-foreground uppercase">
+                        Strategic significance
                       </TableHead>
-                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
-                        Impact
-                      </TableHead>
-                      <TableHead className="text-xs tracking-wide text-muted-foreground uppercase">
+                      <TableHead className="w-20 max-w-20 min-w-20 text-xs tracking-wide text-muted-foreground uppercase">
                         Sources
                       </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {results.events.map((event: CatalystEventView) => (
-                      <TableRow key={event._id}>
-                        <TableCell className="max-w-md align-top whitespace-normal">
-                          <div className="space-y-2">
-                            <div className="font-medium">{event.title}</div>
+                    {sortedCatalystEvents.map((event, index) => {
+                      const anchor = parseAnchorDate(event)
+                      const prevEvent =
+                        index > 0 ? sortedCatalystEvents[index - 1] : undefined
+                      const prevAnchor = prevEvent
+                        ? parseAnchorDate(prevEvent)
+                        : null
+                      const qKey = anchor
+                        ? quarterKeyFromDate(anchor)
+                        : "\0unknown"
+                      const prevQKey = prevAnchor
+                        ? quarterKeyFromDate(prevAnchor)
+                        : "\0unknown"
+                      const showQuarterLabel = qKey !== prevQKey
+                      const quarterLabel =
+                        showQuarterLabel && anchor
+                          ? formatQuarterLabel(anchor)
+                          : showQuarterLabel
+                            ? "—"
+                            : ""
+
+                      return (
+                        <TableRow key={event._id}>
+                          <TableCell className="align-top whitespace-normal text-muted-foreground">
+                            {quarterLabel}
+                          </TableCell>
+                          <TableCell className="max-w-44 align-top whitespace-normal text-muted-foreground">
+                            {eventTimingLabel(event)}
+                          </TableCell>
+                          <TableCell className="max-w-56 align-top font-medium whitespace-normal">
+                            {event.title}
+                          </TableCell>
+                          <TableCell className="max-w-xl min-w-48 align-top whitespace-normal">
                             {event.summary.trim() ? (
-                              <p className="text-sm leading-snug font-normal text-muted-foreground">
+                              <p className="mb-1.5 text-sm leading-snug text-muted-foreground">
                                 {event.summary}
                               </p>
                             ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
-                          {event.whyItMatters.trim() ? (
-                            event.whyItMatters
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-56 align-top whitespace-normal text-muted-foreground">
-                          {eventTimingLabel(event)}
-                        </TableCell>
-                        <TableCell className="max-w-40 align-top whitespace-normal">
-                          {formatEnumLabel(event.eventType)}
-                        </TableCell>
-                        <TableCell className="max-w-xs align-top whitespace-normal text-muted-foreground">
-                          {formatEnumLabel(event.expectedImpact)}
-                        </TableCell>
-                        <TableCell className="align-top whitespace-normal">
-                          {event.sources.length > 0 ? (
-                            <div className="flex flex-col items-start gap-1">
-                              {event.sources.map((source) => (
-                                <Button
-                                  key={source._id}
-                                  variant="link"
-                                  size="sm"
-                                  className="h-auto min-h-0 p-0 font-normal"
-                                  asChild
-                                >
-                                  <a
-                                    href={source.url}
-                                    rel="noreferrer"
-                                    target="_blank"
-                                    title={`${source.publisher}: ${source.title}`}
+                            {event.whyItMatters.trim() ? (
+                              <p className="text-sm leading-snug">
+                                {event.whyItMatters}
+                              </p>
+                            ) : event.summary.trim() ? null : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="w-20 max-w-20 min-w-20 overflow-hidden align-top whitespace-normal">
+                            {event.sources.length > 0 ? (
+                              <div className="flex w-full min-w-0 flex-col items-start gap-1">
+                                {event.sources.map((source) => (
+                                  <Button
+                                    key={source._id}
+                                    variant="link"
+                                    size="sm"
+                                    className="h-auto min-h-0 max-w-full justify-start p-0 font-normal"
+                                    asChild
                                   >
-                                    <span className="max-w-48 truncate">
-                                      {source.publisher}
-                                    </span>
-                                  </a>
-                                </Button>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                                    <a
+                                      href={source.url}
+                                      rel="noreferrer"
+                                      target="_blank"
+                                      title={`${source.publisher}: ${source.title}`}
+                                    >
+                                      <span className="block max-w-full min-w-0 truncate text-left">
+                                        {source.publisher}
+                                      </span>
+                                    </a>
+                                  </Button>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               ) : null}

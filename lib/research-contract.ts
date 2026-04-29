@@ -1,5 +1,25 @@
 import { z } from "zod"
 
+const MAX_EVENT_SUMMARY_CHARS = 360
+const MAX_EVENT_WHY_CHARS = 240
+const MAX_CATALYST_EVENTS = 20
+
+function clampResearchText(value: string, maxLen: number): string {
+  const t = value.trim()
+
+  if (t.length <= maxLen) {
+    return t
+  }
+
+  const cut = t.slice(0, maxLen)
+  const lastSpace = cut.lastIndexOf(" ")
+
+  const head =
+    lastSpace > maxLen * 0.55 ? cut.slice(0, lastSpace).trimEnd() : cut.trimEnd()
+
+  return `${head}…`
+}
+
 function isHttpUrl(value: string) {
   try {
     const url = new URL(value)
@@ -53,7 +73,7 @@ export const catalystEventSchema = z.object({
 export const catalystResearchSchema = z.object({
   companyName: z.string().optional(),
   exchange: z.string().optional(),
-  events: z.array(catalystEventSchema).max(12),
+  events: z.array(catalystEventSchema).max(MAX_CATALYST_EVENTS),
 })
 
 export type CatalystResearch = z.infer<typeof catalystResearchSchema>
@@ -135,13 +155,13 @@ export const catalystResearchAiSchema = z.object({
     .describe("Exchange if supported by sources, otherwise null"),
   events: z
     .array(catalystEventAiSchema)
-    .max(12)
+    .max(MAX_CATALYST_EVENTS)
     .describe(
       "Distinct catalysts only; merge overlapping evidence about the same dated or named occurrence into a single event.",
     ),
 })
 
-type CatalystResearchAi = z.infer<typeof catalystResearchAiSchema>
+export type CatalystResearchAi = z.infer<typeof catalystResearchAiSchema>
 
 export function normalizeCatalystResearchAi(
   research: CatalystResearchAi,
@@ -153,8 +173,11 @@ export function normalizeCatalystResearchAi(
     ...(research.exchange !== null ? { exchange: research.exchange } : {}),
     events: research.events.map((event) => ({
       title: event.title,
-      summary: event.summary,
-      whyItMatters: event.whyItMatters,
+      summary: clampResearchText(event.summary, MAX_EVENT_SUMMARY_CHARS),
+      whyItMatters: clampResearchText(
+        event.whyItMatters,
+        MAX_EVENT_WHY_CHARS,
+      ),
       eventType: event.eventType,
       ...(event.expectedDate !== null
         ? { expectedDate: event.expectedDate }

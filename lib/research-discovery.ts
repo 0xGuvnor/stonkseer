@@ -144,11 +144,23 @@ function industryTailQueries(
   }
 
   if (/(software|technology|semi|internet|hardware|cloud|saas|it services)/.test(i)) {
-    out.push({
-      bucket: "industry",
-      query: `${companyLabel} developer conference platform roadmap enterprise customer momentum ${yearWindow}`,
-      maxResults: 5,
-    })
+    out.push(
+      {
+        bucket: "industry",
+        query: `${companyLabel} developer conference platform roadmap enterprise customer momentum ${yearWindow}`,
+        maxResults: 5,
+      },
+      {
+        bucket: "product",
+        query: `${companyLabel} pricing change consumption credits usage-based billing tier seat expansion ${yearWindow}`,
+        maxResults: 6,
+      },
+      {
+        bucket: "financial",
+        query: `${companyLabel} net revenue retention NRR annual recurring revenue ARR guidance monetization ${yearWindow}`,
+        maxResults: 5,
+      },
+    )
   }
 
   if (/(bank|financial|insurance|capital|credit|reit|asset management)/.test(i)) {

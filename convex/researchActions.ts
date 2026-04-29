@@ -62,7 +62,7 @@ const finnhubQuoteSchema = z
 const finnhubStockEarningsRowSchema = z.record(z.string(), z.unknown())
 
 const MAX_RESEARCH_ATTEMPTS = 2
-const MAX_WEB_SNIPPETS = 36
+const MAX_WEB_SNIPPETS = 48
 const ANONYMOUS_WEB_QUERY_BUDGET = 10
 const MAX_DIAGNOSTIC_URLS_PER_QUERY = 6
 const WEB_SNIPPET_QUOTE_LENGTH = 1200
@@ -146,18 +146,16 @@ const anthropicWebSearchToolOutputSchema = z.array(
   })
 )
 
+const xaiXSearchPostSchema = z.object({
+  author: z.string(),
+  text: z.string(),
+  url: z.string(),
+  likes: z.coerce.number().optional(),
+})
+
 const xaiXSearchToolOutputSchema = z
   .object({
-    posts: z
-      .array(
-        z.object({
-          author: z.string(),
-          text: z.string(),
-          url: z.string(),
-          likes: z.number(),
-        })
-      )
-      .optional(),
+    posts: z.array(xaiXSearchPostSchema).optional(),
   })
   .passthrough()
 
@@ -226,6 +224,34 @@ function isTweetIdStyleTitle(value: string | undefined) {
   const t = compactWhitespace(value)
 
   return t.length === 0 || /^\d+$/.test(t)
+}
+
+/** AI SDK `generateText`: top-level `toolResults` are last-step only; earlier steps stay on `steps`. */
+function* iterateXSearchToolResults(result: {
+  readonly steps: ReadonlyArray<{
+    readonly stepNumber: number
+    readonly toolResults: ReadonlyArray<{
+      readonly toolName: string
+      readonly output: unknown
+    }>
+  }>
+  readonly toolResults: ReadonlyArray<{
+    readonly toolName: string
+    readonly output: unknown
+  }>
+}) {
+  const stepToolResults =
+    result.steps.length > 0
+      ? [...result.steps]
+          .sort((a, b) => a.stepNumber - b.stepNumber)
+          .flatMap((step) => [...step.toolResults])
+      : [...result.toolResults]
+
+  for (const toolResult of stepToolResults) {
+    if (toolResult.toolName === "x_search") {
+      yield toolResult
+    }
+  }
 }
 
 function titleForXPostSnippet(
@@ -317,6 +343,297 @@ function dedupeSnippetsByUrl(snippets: SourceSnippet[], max: number) {
   }
 
   return diversifySnippetsByDomain(unique, max)
+}
+
+function clipSnippetQuote(text: string): string {
+  const t = compactWhitespace(text)
+
+  if (t.length <= WEB_SNIPPET_QUOTE_LENGTH) {
+    return t
+  }
+
+  return `${t.slice(0, WEB_SNIPPET_QUOTE_LENGTH - 1).trimEnd()}…`
+}
+
+function hostnameHint(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "").toLowerCase()
+  } catch {
+    return ""
+  }
+}
+
+/** When no URL-specific excerpt exists, prefer sentences mentioning the hostname; else round-robin by URL order. */
+function fallbackQuoteForUrl(
+  digest: string,
+  url: string,
+  urlOrder: string[],
+): string {
+  const compactDigest = compactWhitespace(digest)
+
+  if (!compactDigest) {
+    return ""
+  }
+
+  const sentences = compactDigest
+    .split(/(?<=[.!?])\s+/)
+    .map(compactWhitespace)
+    .filter(Boolean)
+
+  if (sentences.length === 0) {
+    return clipSnippetQuote(compactDigest)
+  }
+
+  const host = hostnameHint(url)
+  const hostParts = host.split(".").filter((p) => p.length > 2)
+  const hostMatches = sentences.filter((sentence) => {
+    const lower = sentence.toLowerCase()
+
+    if (host && lower.includes(host)) {
+      return true
+    }
+
+    return hostParts.some((part) => lower.includes(part))
+  })
+
+  if (hostMatches.length > 0) {
+    return clipSnippetQuote(hostMatches.join(" "))
+  }
+
+  const position = urlOrder.indexOf(url)
+
+  if (position >= 0) {
+    return clipSnippetQuote(
+      sentences[position % sentences.length] ?? compactDigest,
+    )
+  }
+
+  return clipSnippetQuote(compactDigest)
+}
+
+function mergeExcerptsForQuote(
+  excerpts: string[] | undefined,
+  digestFallback: string,
+  url: string,
+  urlOrder: string[],
+): string {
+  const unique = Array.from(
+    new Set(
+      (excerpts ?? [])
+        .map(compactWhitespace)
+        .filter((value) => value.length > 0),
+    ),
+  )
+
+  if (unique.length > 0) {
+    return clipSnippetQuote(unique.join(" "))
+  }
+
+  return fallbackQuoteForUrl(digestFallback, url, urlOrder)
+}
+
+function collectOpenAiUrlCitationInfo(
+  content: readonly { type: string; providerMetadata?: unknown }[],
+  fullText: string,
+): Map<
+  string,
+  {
+    titles: string[]
+    excerpts: string[]
+  }
+> {
+  const byUrl = new Map<
+    string,
+    {
+      titles: string[]
+      excerpts: string[]
+    }
+  >()
+
+  const bump = (url: string) => {
+    const key = normalizeSourceUrl(url)
+    let entry = byUrl.get(key)
+
+    if (!entry) {
+      entry = { titles: [], excerpts: [] }
+      byUrl.set(key, entry)
+    }
+
+    return entry
+  }
+
+  for (const part of content) {
+    if (part.type !== "text") {
+      continue
+    }
+
+    const metadata = part.providerMetadata as
+      | OpenaiResponsesTextProviderMetadata
+      | undefined
+
+    for (const annotation of metadata?.openai?.annotations ?? []) {
+      if (annotation.type !== "url_citation") {
+        continue
+      }
+
+      const key = normalizeSourceUrl(annotation.url)
+      const entry = bump(key)
+      entry.titles.push(annotation.title)
+
+      const ann = annotation as {
+        start_index?: number
+        end_index?: number
+        startIndex?: number
+        endIndex?: number
+      }
+      const start = ann.start_index ?? ann.startIndex
+      const end = ann.end_index ?? ann.endIndex
+
+      if (
+        typeof start === "number" &&
+        typeof end === "number" &&
+        start >= 0 &&
+        end <= fullText.length &&
+        end > start
+      ) {
+        const excerpt = compactWhitespace(fullText.slice(start, end))
+
+        if (excerpt.length > 0) {
+          entry.excerpts.push(excerpt)
+        }
+      }
+    }
+  }
+
+  return byUrl
+}
+
+function collectAnthropicCitedTextByUrl(
+  sources: Array<{
+    sourceType: string
+    url?: string
+    providerMetadata?: unknown
+  }>,
+): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+
+  for (const source of sources) {
+    if (source.sourceType !== "url" || !source.url) {
+      continue
+    }
+
+    const metadata = source.providerMetadata as
+      | { anthropic?: { citedText?: string; cited_text?: string } }
+      | undefined
+
+    const cited =
+      metadata?.anthropic?.citedText ?? metadata?.anthropic?.cited_text
+
+    if (!cited) {
+      continue
+    }
+
+    const excerpt = compactWhitespace(cited)
+
+    if (!excerpt) {
+      continue
+    }
+
+    const key = normalizeSourceUrl(source.url)
+    const list = map.get(key) ?? []
+    list.push(excerpt)
+    map.set(key, list)
+  }
+
+  return map
+}
+
+function extractGroundingSupportSegmentText(
+  support: unknown,
+  digest: string,
+): string {
+  if (!support || typeof support !== "object") {
+    return ""
+  }
+
+  const record = support as Record<string, unknown>
+  const segment = record.segment as Record<string, unknown> | undefined
+
+  if (segment) {
+    const directText = segment.text ?? segment.segmentText
+
+    if (typeof directText === "string" && directText.trim().length > 0) {
+      return compactWhitespace(directText)
+    }
+
+    const startRaw =
+      segment.startIndex ?? segment.start_index ?? segment.beginIndex
+    const endRaw = segment.endIndex ?? segment.end_index
+
+    const start = typeof startRaw === "number" ? startRaw : undefined
+    const end = typeof endRaw === "number" ? endRaw : undefined
+
+    if (
+      start !== undefined &&
+      end !== undefined &&
+      start >= 0 &&
+      end <= digest.length &&
+      end > start
+    ) {
+      return compactWhitespace(digest.slice(start, end))
+    }
+  }
+
+  return ""
+}
+
+function extractGroundingChunkIndices(support: unknown): number[] {
+  if (!support || typeof support !== "object") {
+    return []
+  }
+
+  const record = support as Record<string, unknown>
+  const raw =
+    record.groundingChunkIndices ?? record.grounding_chunk_indices ?? []
+
+  if (!Array.isArray(raw)) {
+    return []
+  }
+
+  return raw.filter((value): value is number => typeof value === "number")
+}
+
+function buildGeminiQuotesPerChunkIndex(
+  groundingSupports: unknown[],
+  digest: string,
+): Map<number, string[]> {
+  const map = new Map<number, string[]>()
+
+  for (const support of groundingSupports) {
+    const piece = extractGroundingSupportSegmentText(support, digest)
+
+    if (!piece) {
+      continue
+    }
+
+    for (const index of extractGroundingChunkIndices(support)) {
+      const bucket = map.get(index) ?? []
+      bucket.push(piece)
+      map.set(index, bucket)
+    }
+  }
+
+  return map
+}
+
+function readGeminiGroundingSupports(rawJson: unknown): unknown[] {
+  const root = rawJson as Record<string, unknown>
+  const candidates = root.candidates as unknown[] | undefined
+  const first = candidates?.[0] as Record<string, unknown> | undefined
+  const metadata = first?.groundingMetadata as Record<string, unknown> | undefined
+  const supports = metadata?.groundingSupports ?? metadata?.grounding_supports
+
+  return Array.isArray(supports) ? supports : []
 }
 
 function formatFinnhubEarningsRow(row: Record<string, unknown>) {
@@ -578,32 +895,6 @@ function buildGroundedSearchPrompt(
     .join("\n\n")
 }
 
-function collectOpenAiCitationSources(
-  content: readonly { type: string; providerMetadata?: unknown }[]
-) {
-  const sources = new Map<string, string | undefined>()
-
-  for (const part of content) {
-    if (part.type !== "text") {
-      continue
-    }
-
-    const metadata = part.providerMetadata as
-      | OpenaiResponsesTextProviderMetadata
-      | undefined
-
-    for (const annotation of metadata?.openai?.annotations ?? []) {
-      if (annotation.type !== "url_citation") {
-        continue
-      }
-
-      sources.set(normalizeSourceUrl(annotation.url), annotation.title)
-    }
-  }
-
-  return sources
-}
-
 async function fetchOpenAiSearchSnippets(
   symbol: string,
   companyName: string | undefined,
@@ -656,6 +947,7 @@ async function fetchOpenAiSearchSnippets(
       prompt,
     })
     const digest = compactWhitespace(result.text)
+    const citationInfo = collectOpenAiUrlCitationInfo(result.content, result.text)
     const sourceTitles = new Map<string, string | undefined>()
 
     for (const source of result.sources) {
@@ -666,8 +958,9 @@ async function fetchOpenAiSearchSnippets(
       sourceTitles.set(normalizeSourceUrl(source.url), source.title)
     }
 
-    for (const [url, title] of collectOpenAiCitationSources(result.content)) {
-      sourceTitles.set(url, title ?? sourceTitles.get(url))
+    for (const [url, info] of citationInfo) {
+      const preferredTitle = info.titles.find((title) => compactWhitespace(title).length > 0)
+      sourceTitles.set(url, preferredTitle ?? sourceTitles.get(url))
     }
 
     for (const toolResult of result.toolResults) {
@@ -695,6 +988,7 @@ async function fetchOpenAiSearchSnippets(
 
     const snippets: SourceSnippet[] = []
     const urls: string[] = []
+    const urlOrder = [...sourceTitles.keys()]
 
     for (const [url, title] of sourceTitles) {
       const publisher = publisherFromUrl(url)
@@ -703,12 +997,15 @@ async function fetchOpenAiSearchSnippets(
         continue
       }
 
+      const excerpts = citationInfo.get(url)?.excerpts
+      const quote = mergeExcerptsForQuote(excerpts, digest, url, urlOrder)
+
       urls.push(url)
       snippets.push({
         url,
         title: title ?? url,
         publisher,
-        quote: digest.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
+        quote,
       })
     }
 
@@ -791,6 +1088,7 @@ async function fetchAnthropicSearchSnippets(
       prompt,
     })
     const digest = compactWhitespace(result.text)
+    const citedByUrl = collectAnthropicCitedTextByUrl(result.sources)
     const sourceTitles = new Map<string, string | undefined>()
     let resultCount = 0
 
@@ -828,6 +1126,7 @@ async function fetchAnthropicSearchSnippets(
 
     const snippets: SourceSnippet[] = []
     const urls: string[] = []
+    const urlOrder = [...sourceTitles.keys()]
 
     for (const [url, title] of sourceTitles) {
       const publisher = publisherFromUrl(url)
@@ -836,12 +1135,15 @@ async function fetchAnthropicSearchSnippets(
         continue
       }
 
+      const excerpts = citedByUrl.get(url)
+      const quote = mergeExcerptsForQuote(excerpts, digest, url, urlOrder)
+
       urls.push(url)
       snippets.push({
         url,
         title: title ?? url,
         publisher,
-        quote: digest.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
+        quote,
       })
     }
 
@@ -936,13 +1238,10 @@ async function fetchXaiSearchSnippets(
     const snippets: SourceSnippet[] = []
     const urls: string[] = []
     const seenUrls = new Set<string>()
+    // Raw post count from successfully parsed tool outputs (before URL dedupe).
     let resultCount = 0
 
-    for (const toolResult of result.toolResults) {
-      if (toolResult.toolName !== "x_search") {
-        continue
-      }
-
+    for (const toolResult of iterateXSearchToolResults(result)) {
       const parsedOutput = xaiXSearchToolOutputSchema.safeParse(
         toolResult.output
       )
@@ -969,7 +1268,7 @@ async function fetchXaiSearchSnippets(
           url,
           title: titleForXPostSnippet(url, author, sourceTitles.get(url)),
           publisher,
-          quote: quote.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
+          quote: clipSnippetQuote(quote),
         })
       }
     }
@@ -979,6 +1278,7 @@ async function fetchXaiSearchSnippets(
 
     // Vercel AI Gateway can return x_search tool-call + `source` URL parts without
     // normalized `tool-result` rows; reuse the model digest as the snippet quote.
+    // When multiple X URLs appear, the same digest is intentionally shared per URL.
     if (snippets.length === 0 && digest) {
       for (const source of result.sources) {
         if (source.sourceType !== "url") {
@@ -999,7 +1299,7 @@ async function fetchXaiSearchSnippets(
           url,
           title: titleForXPostSnippet(url, "", source.title),
           publisher,
-          quote: digest.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
+          quote: clipSnippetQuote(digest),
         })
       }
     }
@@ -1171,12 +1471,19 @@ async function fetchGeminiGroundedSearchSnippets(
   )
   const snippets: SourceSnippet[] = []
   const urls: string[] = []
+  const supports = readGeminiGroundingSupports(json)
+  const quotesByChunk = buildGeminiQuotesPerChunkIndex(supports, digest)
+  const chunks = candidate?.groundingMetadata?.groundingChunks ?? []
+  const urlOrder = chunks
+    .map((chunk) =>
+      chunk.web?.uri ? normalizeSourceUrl(chunk.web.uri) : null,
+    )
+    .filter((value): value is string => Boolean(value))
 
-  for (const chunk of candidate?.groundingMetadata?.groundingChunks ?? []) {
+  for (const [chunkIndex, chunk] of chunks.entries()) {
     const url = chunk.web?.uri
-    const title = chunk.web?.title
 
-    if (!url || !title || !digest) {
+    if (!url || !digest) {
       continue
     }
 
@@ -1188,16 +1495,21 @@ async function fetchGeminiGroundedSearchSnippets(
       continue
     }
 
+    const title = chunk.web?.title?.trim() || publisher
+
     if (urls.includes(normalizedUrl)) {
       continue
     }
 
     urls.push(normalizedUrl)
+    const excerpts = quotesByChunk.get(chunkIndex)
+    const quote = mergeExcerptsForQuote(excerpts, digest, normalizedUrl, urlOrder)
+
     snippets.push({
       url: normalizedUrl,
       title,
       publisher,
-      quote: digest.slice(0, WEB_SNIPPET_QUOTE_LENGTH),
+      quote,
     })
   }
 
@@ -1341,10 +1653,11 @@ async function buildAiEvents(
     "For regulated industries, look carefully for permit, license, agency review, environmental review, hearing, vote, and approval timelines even when the event is not marketed as a conference or launch.",
     "Classify eventType using: earnings, product, regulatory, launch, investor_day, conference (trade shows, keynote slots, sell-side conferences, webcast-only conference tracks), partnership (JVs, OEM, major customer or collaboration deals), corporate (M&A, spin-offs, reorgs, financings, proxy votes, lock-up or selling-window expirations, Rule 144 or resale windows, registered secondaries or directs that add tradable supply), macro, legal, other.",
     "When snippets clearly describe the same real-world occasion (same named flagship or recurring company event, same schedule or venue, same official registration or agenda page), output one merged event—not separate rows for 'the conference' versus 'expected announcements there'. Put likely product or AI reveals in summary and whyItMatters; pick the dominant eventType (often conference or investor_day for the umbrella moment).",
+    "When distinct snippets support the same business lever (pricing changes, usage or consumption billing, AI credits, seat mix, net revenue retention commentary, competitive product response) without conflicting dates or figures, you may output separate theme-style events with status 'likely' or 'speculative' and lower confidence—each row must cite different URLs and must not merge inconsistent lock-up dates, float figures, or percentages from different sources into one event.",
     "Roadmap or target milestones are allowed when supported by company statements, filings, transcripts, regulator pages, exchange calendars, or credible reporting. Use status 'likely' or 'speculative' and lower confidence when timing is inferred from a target, cadence, or historical calendar pattern.",
     "Do not require exact dates. Use expectedDate for exact dates, windowStart/windowEnd for month/quarter/season/year-end windows, and datePrecision to show how specific the timing is.",
     "Exclude stale past events unless a source clearly supports a future recurrence or future milestone.",
-    "Return up to 12 highest-impact events, ordered chronologically when timing is known.",
+    "Return up to 20 highest-impact events, ordered chronologically when timing is known.",
     "Prefer confirmed company, exchange, regulator, SEC, or investor relations sources over commentary.",
     "When hosted search providers disagree, keep only events supported by concrete source snippets and prefer primary sources over provider summaries.",
     "Use null for unknown company, exchange, publication date, or event date fields.",
