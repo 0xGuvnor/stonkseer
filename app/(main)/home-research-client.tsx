@@ -1,23 +1,16 @@
 "use client"
 
-import { Show, useAuth } from "@clerk/nextjs"
+import { useAuth } from "@clerk/nextjs"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react"
+import { useAction, useConvexAuth } from "convex/react"
+import { ArrowRight, Search, TrendingUp } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
-import { ArrowRight, Search, TrendingUp } from "lucide-react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   Form,
   FormControl,
@@ -26,35 +19,13 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { api } from "@/convex/_generated/api"
-import type { Id } from "@/convex/_generated/dataModel"
 import {
   researchFormSchema,
   type ResearchFormValues,
 } from "@/lib/research-form-schema"
-import type {
-  AnonymousResearchRunResponse,
-  CatalystEventView,
-  PortfolioView,
-} from "@/types/research-ui"
-
-const NEW_PORTFOLIO_VALUE = "__new__"
+import { writeActiveResearchSession } from "@/lib/research-run-session-storage"
+import type { AnonymousResearchRunResponse } from "@/types/research-ui"
 
 const POPULAR_TICKERS = [
   "AAPL",
@@ -67,175 +38,14 @@ const POPULAR_TICKERS = [
   "AMZN",
 ] as const
 
-const SHORT_MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-] as const
-
-function ordinalSuffix(day: number): string {
-  const mod10 = day % 10
-  const mod100 = day % 100
-  if (mod100 >= 11 && mod100 <= 13) {
-    return "th"
-  }
-  if (mod10 === 1) {
-    return "st"
-  }
-  if (mod10 === 2) {
-    return "nd"
-  }
-  if (mod10 === 3) {
-    return "rd"
-  }
-  return "th"
-}
-
-/** Parses leading YYYY-MM-DD (optionally followed by time) as a calendar local date. */
-function tryFormatIsoDatePrefix(raw: string): string | null {
-  const s = raw.trim()
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
-  if (!match) {
-    return null
-  }
-  const year = Number(match[1])
-  const month = Number(match[2])
-  const day = Number(match[3])
-  if (
-    !Number.isInteger(year) ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31
-  ) {
-    return null
-  }
-  const d = new Date(year, month - 1, day)
-  if (
-    d.getFullYear() !== year ||
-    d.getMonth() !== month - 1 ||
-    d.getDate() !== day
-  ) {
-    return null
-  }
-  return `${day}${ordinalSuffix(day)} ${SHORT_MONTHS[d.getMonth()]} ${year}`
-}
-
-function formatTimingFragment(raw: string): string {
-  return tryFormatIsoDatePrefix(raw) ?? raw.trim()
-}
-
-function clientNowMs(): number {
-  return Date.now()
-}
-
-function eventTimingLabel(event: CatalystEventView) {
-  if (event.expectedDate) {
-    return formatTimingFragment(event.expectedDate)
-  }
-
-  if (event.windowStart && event.windowEnd) {
-    return `${formatTimingFragment(event.windowStart)} - ${formatTimingFragment(event.windowEnd)}`
-  }
-
-  if (event.windowStart) {
-    return `After ${formatTimingFragment(event.windowStart)}`
-  }
-
-  if (event.windowEnd) {
-    return `By ${formatTimingFragment(event.windowEnd)}`
-  }
-
-  return event.datePrecision === "unknown"
-    ? "Timing unknown"
-    : `Timing: ${event.datePrecision}`
-}
-
-/** Local calendar date from leading YYYY-MM-DD, or null if not parseable. */
-function parseIsoPrefixToLocalDate(raw: string | undefined): Date | null {
-  if (!raw?.trim()) {
-    return null
-  }
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw.trim())
-  if (!match) {
-    return null
-  }
-  const year = Number(match[1])
-  const month = Number(match[2])
-  const day = Number(match[3])
-  if (
-    !Number.isInteger(year) ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31
-  ) {
-    return null
-  }
-  const d = new Date(year, month - 1, day)
-  if (
-    d.getFullYear() !== year ||
-    d.getMonth() !== month - 1 ||
-    d.getDate() !== day
-  ) {
-    return null
-  }
-  return d
-}
-
-/** Anchor date for quarter + sort: expectedDate, else windowStart, else windowEnd. */
-function parseAnchorDate(event: CatalystEventView): Date | null {
-  return (
-    parseIsoPrefixToLocalDate(event.expectedDate) ??
-    parseIsoPrefixToLocalDate(event.windowStart) ??
-    parseIsoPrefixToLocalDate(event.windowEnd)
-  )
-}
-
-function quarterKeyFromDate(d: Date): string {
-  return `${d.getFullYear()}-${Math.floor(d.getMonth() / 3)}`
-}
-
-function formatQuarterLabel(d: Date): string {
-  const q = Math.floor(d.getMonth() / 3) + 1
-  return `Q${q} ${d.getFullYear()}`
-}
-
-function sortCatalystEventsByAnchor(events: CatalystEventView[]) {
-  return [...events].sort((a, b) => {
-    const da = parseAnchorDate(a)
-    const db = parseAnchorDate(b)
-    const ta = da ? da.getTime() : Number.POSITIVE_INFINITY
-    const tb = db ? db.getTime() : Number.POSITIVE_INFINITY
-    if (ta !== tb) {
-      return ta - tb
-    }
-    return a._id < b._id ? -1 : a._id > b._id ? 1 : 0
-  })
-}
-
 export function HomeResearchClient() {
+  const router = useRouter()
   const form = useForm<ResearchFormValues>({
     resolver: zodResolver(researchFormSchema),
     defaultValues: { symbol: "" },
     mode: "onChange",
   })
 
-  const [runId, setRunId] = useState<Id<"researchRuns"> | null>(null)
-  const [anonymousTokenHash, setAnonymousTokenHash] = useState<
-    string | undefined
-  >()
-  const [portfolioName, setPortfolioName] = useState("My Portfolio")
-  const [portfolioSelection, setPortfolioSelection] = useState<string>("")
   const [message, setMessage] = useState<string | null>(null)
 
   const { isLoaded: clerkLoaded, isSignedIn } = useAuth()
@@ -243,34 +53,9 @@ export function HomeResearchClient() {
   const requestAuthenticatedRun = useAction(
     api.researchActions.requestAuthenticatedRun
   )
-  const createPortfolio = useMutation(api.portfolios.create)
-  const saveResearchToPortfolio = useMutation(
-    api.portfolios.saveResearchToPortfolio
-  )
-
-  const me = useQuery(api.users.current, isAuthenticated ? {} : "skip")
-
-  const portfolios = useQuery(
-    api.portfolios.listMine,
-    isAuthenticated && me ? {} : "skip"
-  )
-  const hasAuthenticatedRunAccess =
-    isSignedIn && isAuthenticated && me !== undefined && me !== null
-  const shouldLoadResults =
-    runId !== null &&
-    (anonymousTokenHash !== undefined || hasAuthenticatedRunAccess)
-  const results = useQuery(
-    api.research.getRunResults,
-    shouldLoadResults ? { runId, anonymousTokenHash } : "skip"
-  )
-
-  const events = results?.events
-  const sortedCatalystEvents =
-    events && events.length > 0 ? sortCatalystEventsByAnchor(events) : []
 
   async function onResearchSubmit(values: ResearchFormValues) {
     const normalizedSymbol = values.symbol.trim().toUpperCase()
-    const nowMs = clientNowMs()
     setMessage(null)
 
     try {
@@ -287,10 +72,12 @@ export function HomeResearchClient() {
       if (isSignedIn) {
         const result = await requestAuthenticatedRun({
           symbol: normalizedSymbol,
-          now: nowMs,
+          now: Number(new Date()),
         })
-        setRunId(result.runId)
-        setAnonymousTokenHash(undefined)
+        writeActiveResearchSession(normalizedSymbol, {
+          runId: result.runId,
+        })
+        router.push(`/${normalizedSymbol}`)
       } else {
         const response = await fetch("/api/research/anonymous", {
           method: "POST",
@@ -305,8 +92,11 @@ export function HomeResearchClient() {
           )
         }
 
-        setRunId(result.runId)
-        setAnonymousTokenHash(result.anonymousTokenHash)
+        writeActiveResearchSession(normalizedSymbol, {
+          runId: result.runId,
+          anonymousTokenHash: result.anonymousTokenHash,
+        })
+        router.push(`/${normalizedSymbol}`)
       }
     } catch (error) {
       const text = error instanceof Error ? error.message : "Research failed"
@@ -321,61 +111,20 @@ export function HomeResearchClient() {
     }
   }
 
-  async function handleSave() {
-    if (!isAuthenticated || !me) {
-      setMessage(
-        clerkLoaded && isSignedIn
-          ? "Connecting your account—try again in a moment."
-          : "Sign in with Google to save this ticker to a portfolio."
-      )
-      return
-    }
-
-    if (!results || results.events.length === 0) {
-      setMessage("No catalyst events to save for this run.")
-      return
-    }
-
-    const eventIds = sortedCatalystEvents.map((event) => event._id)
-
-    setMessage(null)
-    const selectedPortfolioValue =
-      portfolioSelection || portfolios?.[0]?._id || NEW_PORTFOLIO_VALUE
-    const portfolioId =
-      selectedPortfolioValue !== NEW_PORTFOLIO_VALUE
-        ? (selectedPortfolioValue as Id<"portfolios">)
-        : await createPortfolio({
-            name: portfolioName,
-          })
-
-    await saveResearchToPortfolio({
-      portfolioId,
-      symbol: results.run.symbol,
-      eventIds,
-    })
-    setMessage(
-      `Saved ${results.run.symbol} (${eventIds.length} catalyst${eventIds.length === 1 ? "" : "s"}) to your portfolio.`
-    )
-  }
-
-  const portfolioList = portfolios ?? []
-  const saveTargetValue =
-    portfolioSelection || portfolioList[0]?._id || NEW_PORTFOLIO_VALUE
-
   return (
-    <section className="flex w-full flex-col gap-8 pb-10">
-      <div className="flex flex-col items-center px-6 pt-6 md:pt-10">
+    <section className="mx-auto flex min-h-[calc(100svh-2.75rem)] w-full max-w-3xl flex-col items-center justify-center gap-8 px-6 pb-12 md:min-h-svh">
+      <div className="flex w-full max-w-xl flex-col items-center text-center">
         <Badge variant="secondary" className="mb-5 px-3 py-1">
           <span className="size-1.5 animate-pulse rounded-full bg-green-500" />
           AI-powered stocks catalyst research
         </Badge>
-        <h1 className="max-w-3xl text-center font-heading text-3xl font-semibold tracking-tight md:text-4xl">
+        <h1 className="max-w-3xl font-heading text-3xl font-semibold tracking-tight md:text-4xl">
           What&apos;s moving your{" "}
           <span className="bg-linear-to-r from-primary to-chart-2 bg-clip-text text-transparent">
             stonks?
           </span>
         </h1>
-        <p className="mt-4 max-w-xl text-center text-muted-foreground">
+        <p className="mt-4 max-w-xl text-muted-foreground">
           Enter any ticker to get AI-researched catalysts for the next 12 months
           — earnings, product launches, regulatory events, and more.
         </p>
@@ -403,6 +152,7 @@ export function HomeResearchClient() {
                         maxLength={10}
                         placeholder="Enter a ticker, e.g. AAPL"
                         {...field}
+                        autoFocus
                       />
                     </FormControl>
                     <Button
@@ -460,239 +210,10 @@ export function HomeResearchClient() {
       </div>
 
       {message ? (
-        <div className="mx-auto w-full max-w-5xl px-6">
-          <Alert>
+        <div className="w-full max-w-xl">
+          <Alert className="text-left">
             <AlertDescription>{message}</AlertDescription>
           </Alert>
-        </div>
-      ) : null}
-
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 md:flex-row md:items-stretch">
-        <Card className="min-w-0 flex-1 shadow-sm">
-          <CardHeader>
-            <CardDescription>
-              {clerkLoaded && isSignedIn
-                ? "Signed-in research uses your account limits instead of the one-time anonymous trial."
-                : "Anonymous users get one uncached ticker research run per day."}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Card className="shrink-0 shadow-sm md:w-80">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold">
-              Portfolio tracking
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Show when="signed-out">
-              <Alert>
-                <AlertDescription>
-                  Try one ticker first. When you want to save catalysts, sign in
-                  with Google and create a portfolio.
-                </AlertDescription>
-              </Alert>
-            </Show>
-            <Show when="signed-in">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="portfolio-default-name">
-                    Default portfolio name
-                  </Label>
-                  <Input
-                    id="portfolio-default-name"
-                    value={portfolioName}
-                    onChange={(event) => setPortfolioName(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="portfolio-save-target">Save target</Label>
-                  <Select
-                    value={saveTargetValue}
-                    onValueChange={setPortfolioSelection}
-                  >
-                    <SelectTrigger
-                      id="portfolio-save-target"
-                      className="w-full min-w-0"
-                    >
-                      <SelectValue placeholder="Choose a portfolio" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {portfolioList.map((portfolio: PortfolioView) => (
-                        <SelectItem key={portfolio._id} value={portfolio._id}>
-                          {portfolio.name}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value={NEW_PORTFOLIO_VALUE}>
-                        Create {portfolioName}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm leading-snug font-medium">
-                    Your portfolios
-                  </p>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    {portfolioList.length > 0 ? (
-                      portfolioList.map((portfolio: PortfolioView) => (
-                        <p key={portfolio._id}>{portfolio.name}</p>
-                      ))
-                    ) : (
-                      <p>
-                        No portfolios yet. Saving a completed run will create
-                        one with every catalyst from that run.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Show>
-          </CardContent>
-        </Card>
-      </div>
-
-      {results ? (
-        <div className="mx-auto w-full max-w-5xl px-6">
-          <Card className="shadow-sm">
-            <CardHeader>
-              <div>
-                <CardTitle className="text-xl font-semibold">
-                  {results.run.symbol} catalyst research
-                </CardTitle>
-                <CardDescription>
-                  Status: {results.run.status}
-                  {results.run.cacheHit ? " (cached)" : ""}
-                </CardDescription>
-              </div>
-              {results.run.status === "completed" &&
-              results.events.length > 0 ? (
-                <CardAction>
-                  <Button onClick={handleSave}>Save to portfolio</Button>
-                </CardAction>
-              ) : null}
-            </CardHeader>
-
-            <CardContent className="space-y-4">
-              {results.run.error ? (
-                <Alert variant="destructive">
-                  <AlertDescription>{results.run.error}</AlertDescription>
-                </Alert>
-              ) : null}
-
-              {results.run.status !== "completed" ? (
-                <Alert>
-                  <AlertDescription>
-                    Research is queued or running. Results will appear here when
-                    Convex updates the run.
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-
-              {results.events.length > 0 ? (
-                <Table className="min-w-[860px]">
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="w-22 min-w-22 text-xs tracking-wide text-muted-foreground uppercase">
-                        Quarter
-                      </TableHead>
-                      <TableHead className="max-w-44 text-xs tracking-wide text-muted-foreground uppercase">
-                        Expected timing
-                      </TableHead>
-                      <TableHead className="max-w-56 text-xs tracking-wide text-muted-foreground uppercase">
-                        Event / milestone
-                      </TableHead>
-                      <TableHead className="max-w-xl min-w-48 text-xs tracking-wide text-muted-foreground uppercase">
-                        Strategic significance
-                      </TableHead>
-                      <TableHead className="w-20 max-w-20 min-w-20 text-xs tracking-wide text-muted-foreground uppercase">
-                        Sources
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedCatalystEvents.map((event, index) => {
-                      const anchor = parseAnchorDate(event)
-                      const prevEvent =
-                        index > 0 ? sortedCatalystEvents[index - 1] : undefined
-                      const prevAnchor = prevEvent
-                        ? parseAnchorDate(prevEvent)
-                        : null
-                      const qKey = anchor
-                        ? quarterKeyFromDate(anchor)
-                        : "\0unknown"
-                      const prevQKey = prevAnchor
-                        ? quarterKeyFromDate(prevAnchor)
-                        : "\0unknown"
-                      const showQuarterLabel = qKey !== prevQKey
-                      const quarterLabel =
-                        showQuarterLabel && anchor
-                          ? formatQuarterLabel(anchor)
-                          : showQuarterLabel
-                            ? "—"
-                            : ""
-
-                      return (
-                        <TableRow key={event._id}>
-                          <TableCell className="align-top whitespace-normal text-muted-foreground">
-                            {quarterLabel}
-                          </TableCell>
-                          <TableCell className="max-w-44 align-top whitespace-normal text-muted-foreground">
-                            {eventTimingLabel(event)}
-                          </TableCell>
-                          <TableCell className="max-w-56 align-top font-medium whitespace-normal">
-                            {event.title}
-                          </TableCell>
-                          <TableCell className="max-w-xl min-w-48 align-top whitespace-normal">
-                            {event.summary.trim() ? (
-                              <p className="mb-1.5 text-sm leading-snug text-muted-foreground">
-                                {event.summary}
-                              </p>
-                            ) : null}
-                            {event.whyItMatters.trim() ? (
-                              <p className="text-sm leading-snug">
-                                {event.whyItMatters}
-                              </p>
-                            ) : event.summary.trim() ? null : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="w-20 max-w-20 min-w-20 overflow-hidden align-top whitespace-normal">
-                            {event.sources.length > 0 ? (
-                              <div className="flex w-full min-w-0 flex-col items-start gap-1">
-                                {event.sources.map((source) => (
-                                  <Button
-                                    key={source._id}
-                                    variant="link"
-                                    size="sm"
-                                    className="h-auto min-h-0 max-w-full justify-start p-0 font-normal"
-                                    asChild
-                                  >
-                                    <a
-                                      href={source.url}
-                                      rel="noreferrer"
-                                      target="_blank"
-                                      title={`${source.publisher}: ${source.title}`}
-                                    >
-                                      <span className="block max-w-full min-w-0 truncate text-left">
-                                        {source.publisher}
-                                      </span>
-                                    </a>
-                                  </Button>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              ) : null}
-            </CardContent>
-          </Card>
         </div>
       ) : null}
     </section>

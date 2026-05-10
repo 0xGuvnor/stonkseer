@@ -112,9 +112,15 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {NAV.map(({ href, label, icon: Icon }) => {
+                const isTickerResearchPath =
+                  pathname.length > 1 &&
+                  pathname !== "/portfolios" &&
+                  !pathname.startsWith("/portfolios/") &&
+                  pathname !== "/calendar" &&
+                  !pathname.startsWith("/calendar/")
                 const isActive =
                   href === "/"
-                    ? pathname === "/"
+                    ? pathname === "/" || isTickerResearchPath
                     : pathname === href || pathname.startsWith(`${href}/`)
 
                 return (
