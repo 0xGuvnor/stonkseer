@@ -1,12 +1,10 @@
 "use node"
 
+import { webSearch } from "@exalabs/ai-sdk"
 import { anthropic } from "@ai-sdk/anthropic"
-import {
-  openai,
-  type OpenaiResponsesTextProviderMetadata,
-} from "@ai-sdk/openai"
+import { google, type GoogleGenerativeAIProviderMetadata } from "@ai-sdk/google"
 import { xai } from "@ai-sdk/xai"
-import { generateText, Output } from "ai"
+import { generateText, Output, stepCountIs, type ToolSet } from "ai"
 import { z } from "zod"
 
 import { internal } from "./_generated/api"
@@ -75,62 +73,22 @@ const HOSTED_SEARCH_PROVIDERS = [
   "anthropic",
   "xai",
 ] as const
-const OPENAI_SEARCH_CONTEXT_SIZES = ["low", "medium", "high"] as const
 
 type HostedSearchProvider = (typeof HOSTED_SEARCH_PROVIDERS)[number]
-type OpenAiSearchContextSize = (typeof OPENAI_SEARCH_CONTEXT_SIZES)[number]
 
-const geminiGroundedSearchSchema = z.object({
-  candidates: z
-    .array(
-      z.object({
-        content: z
-          .object({
-            parts: z
-              .array(
-                z.object({
-                  text: z.string().optional(),
-                })
-              )
-              .optional(),
-          })
-          .optional(),
-        groundingMetadata: z
-          .object({
-            groundingChunks: z
-              .array(
-                z.object({
-                  web: z
-                    .object({
-                      uri: z.string().optional(),
-                      title: z.string().optional(),
-                    })
-                    .optional(),
-                })
-              )
-              .optional(),
-            webSearchQueries: z.array(z.string()).optional(),
-          })
-          .optional(),
-      })
-    )
-    .optional(),
-})
-
-const openAiWebSearchToolOutputSchema = z
+const exaSearchApiResponseSchema = z
   .object({
-    sources: z
+    results: z
       .array(
-        z.discriminatedUnion("type", [
-          z.object({
-            type: z.literal("url"),
+        z
+          .object({
             url: z.string(),
-          }),
-          z.object({
-            type: z.literal("api"),
-            name: z.string(),
-          }),
-        ])
+            title: z.string().optional(),
+            text: z.string().optional(),
+            summary: z.string().optional(),
+            highlights: z.array(z.string()).optional(),
+          })
+          .passthrough(),
       )
       .optional(),
   })
@@ -254,6 +212,33 @@ function* iterateXSearchToolResults(result: {
   }
 }
 
+function* iterateWebSearchToolResults(result: {
+  readonly steps: ReadonlyArray<{
+    readonly stepNumber: number
+    readonly toolResults: ReadonlyArray<{
+      readonly toolName: string
+      readonly output: unknown
+    }>
+  }>
+  readonly toolResults: ReadonlyArray<{
+    readonly toolName: string
+    readonly output: unknown
+  }>
+}) {
+  const stepToolResults =
+    result.steps.length > 0
+      ? [...result.steps]
+          .sort((a, b) => a.stepNumber - b.stepNumber)
+          .flatMap((step) => [...step.toolResults])
+      : [...result.toolResults]
+
+  for (const toolResult of stepToolResults) {
+    if (toolResult.toolName === "webSearch") {
+      yield toolResult
+    }
+  }
+}
+
 function titleForXPostSnippet(
   url: string,
   author: string,
@@ -310,12 +295,10 @@ function enabledHostedSearchProviders(): HostedSearchProvider[] {
   return providers
 }
 
-function openAiSearchContextSize(): OpenAiSearchContextSize {
-  const value = process.env.CATALYST_OPENAI_SEARCH_CONTEXT_SIZE?.toLowerCase()
+function openAiExaAgentMaxSteps(): number {
+  const value = Number(process.env.CATALYST_OPENAI_EXA_AGENT_MAX_STEPS)
 
-  return OPENAI_SEARCH_CONTEXT_SIZES.includes(value as OpenAiSearchContextSize)
-    ? (value as OpenAiSearchContextSize)
-    : "medium"
+  return Number.isInteger(value) && value >= 2 && value <= 25 ? value : 5
 }
 
 function anthropicWebSearchMaxUses() {
@@ -432,22 +415,10 @@ function mergeExcerptsForQuote(
   return fallbackQuoteForUrl(digestFallback, url, urlOrder)
 }
 
-function collectOpenAiUrlCitationInfo(
-  content: readonly { type: string; providerMetadata?: unknown }[],
-  fullText: string,
-): Map<
-  string,
-  {
-    titles: string[]
-    excerpts: string[]
-  }
-> {
+function collectEvidenceFromExaToolOutputs(outputs: unknown[]) {
   const byUrl = new Map<
     string,
-    {
-      titles: string[]
-      excerpts: string[]
-    }
+    { titles: string[]; excerpts: string[] }
   >()
 
   const bump = (url: string) => {
@@ -462,45 +433,32 @@ function collectOpenAiUrlCitationInfo(
     return entry
   }
 
-  for (const part of content) {
-    if (part.type !== "text") {
+  for (const raw of outputs) {
+    const parsed = exaSearchApiResponseSchema.safeParse(raw)
+
+    if (!parsed.success) {
       continue
     }
 
-    const metadata = part.providerMetadata as
-      | OpenaiResponsesTextProviderMetadata
-      | undefined
+    for (const row of parsed.data.results ?? []) {
+      const entry = bump(row.url)
 
-    for (const annotation of metadata?.openai?.annotations ?? []) {
-      if (annotation.type !== "url_citation") {
-        continue
+      if (row.title && compactWhitespace(row.title).length > 0) {
+        entry.titles.push(row.title)
       }
 
-      const key = normalizeSourceUrl(annotation.url)
-      const entry = bump(key)
-      entry.titles.push(annotation.title)
-
-      const ann = annotation as {
-        start_index?: number
-        end_index?: number
-        startIndex?: number
-        endIndex?: number
-      }
-      const start = ann.start_index ?? ann.startIndex
-      const end = ann.end_index ?? ann.endIndex
-
-      if (
-        typeof start === "number" &&
-        typeof end === "number" &&
-        start >= 0 &&
-        end <= fullText.length &&
-        end > start
-      ) {
-        const excerpt = compactWhitespace(fullText.slice(start, end))
-
-        if (excerpt.length > 0) {
-          entry.excerpts.push(excerpt)
+      for (const h of row.highlights ?? []) {
+        if (compactWhitespace(h).length > 0) {
+          entry.excerpts.push(h)
         }
+      }
+
+      if (row.text && compactWhitespace(row.text).length > 0) {
+        entry.excerpts.push(row.text)
+      }
+
+      if (row.summary && compactWhitespace(row.summary).length > 0) {
+        entry.excerpts.push(row.summary)
       }
     }
   }
@@ -624,16 +582,6 @@ function buildGeminiQuotesPerChunkIndex(
   }
 
   return map
-}
-
-function readGeminiGroundingSupports(rawJson: unknown): unknown[] {
-  const root = rawJson as Record<string, unknown>
-  const candidates = root.candidates as unknown[] | undefined
-  const first = candidates?.[0] as Record<string, unknown> | undefined
-  const metadata = first?.groundingMetadata as Record<string, unknown> | undefined
-  const supports = metadata?.groundingSupports ?? metadata?.grounding_supports
-
-  return Array.isArray(supports) ? supports : []
 }
 
 function formatFinnhubEarningsRow(row: Record<string, unknown>) {
@@ -906,6 +854,7 @@ async function fetchOpenAiSearchSnippets(
   diagnostics: SearchQueryDiagnostic[]
 }> {
   const model = process.env.CATALYST_OPENAI_SEARCH_MODEL
+  const exaApiKey = process.env.EXA_API_KEY
   const prompt = buildGroundedSearchPrompt(
     symbol,
     companyName,
@@ -915,7 +864,7 @@ async function fetchOpenAiSearchSnippets(
   )
   const diagnosticBase = {
     bucket: "market_news" as const,
-    query: `OpenAI web search: ${symbol}`,
+    query: `GPT + Exa web search: ${symbol}`,
     maxResults: 10,
   }
 
@@ -928,7 +877,23 @@ async function fetchOpenAiSearchSnippets(
           resultCount: 0,
           keptCount: 0,
           urls: [],
-          error: "Missing CATALYST_OPENAI_SEARCH_MODEL for OpenAI web search",
+          error:
+            "Missing CATALYST_OPENAI_SEARCH_MODEL (GPT orchestrator for Exa web search)",
+        },
+      ],
+    }
+  }
+
+  if (!exaApiKey) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: "Missing EXA_API_KEY for Exa web search tool",
         },
       ],
     }
@@ -937,52 +902,50 @@ async function fetchOpenAiSearchSnippets(
   try {
     const result = await generateText({
       model,
+      system:
+        "You are a research assistant. Use the webSearch tool to retrieve current web sources with concrete URLs, then write a concise evidence digest that references those sources. Prefer multiple focused searches if one query is too broad.",
       tools: {
-        web_search: openai.tools.webSearch({
-          externalWebAccess: true,
-          searchContextSize: openAiSearchContextSize(),
+        webSearch: webSearch({
+          apiKey: exaApiKey,
+          type: "auto",
+          numResults: 10,
+          contents: {
+            text: { maxCharacters: WEB_SNIPPET_QUOTE_LENGTH },
+            livecrawl: "fallback",
+          },
         }),
       },
-      toolChoice: { type: "tool", toolName: "web_search" },
+      stopWhen: stepCountIs(openAiExaAgentMaxSteps()),
       prompt,
     })
+
     const digest = compactWhitespace(result.text)
-    const citationInfo = collectOpenAiUrlCitationInfo(result.content, result.text)
+    const toolOutputs: unknown[] = []
+
+    for (const toolResult of iterateWebSearchToolResults(result)) {
+      toolOutputs.push(toolResult.output)
+    }
+
+    const citationInfo = collectEvidenceFromExaToolOutputs(toolOutputs)
     const sourceTitles = new Map<string, string | undefined>()
+
+    for (const [url, info] of citationInfo) {
+      const preferredTitle = info.titles.find(
+        (title) => compactWhitespace(title).length > 0,
+      )
+      sourceTitles.set(url, preferredTitle)
+    }
 
     for (const source of result.sources) {
       if (source.sourceType !== "url") {
         continue
       }
 
-      sourceTitles.set(normalizeSourceUrl(source.url), source.title)
-    }
+      const normalized = normalizeSourceUrl(source.url)
+      const existing = sourceTitles.get(normalized)
 
-    for (const [url, info] of citationInfo) {
-      const preferredTitle = info.titles.find((title) => compactWhitespace(title).length > 0)
-      sourceTitles.set(url, preferredTitle ?? sourceTitles.get(url))
-    }
-
-    for (const toolResult of result.toolResults) {
-      if (toolResult.toolName !== "web_search") {
-        continue
-      }
-
-      const parsedOutput = openAiWebSearchToolOutputSchema.safeParse(
-        toolResult.output
-      )
-
-      if (!parsedOutput.success) {
-        continue
-      }
-
-      for (const source of parsedOutput.data.sources ?? []) {
-        if (source.type !== "url") {
-          continue
-        }
-
-        const normalizedUrl = normalizeSourceUrl(source.url)
-        sourceTitles.set(normalizedUrl, sourceTitles.get(normalizedUrl))
+      if (!existing || compactWhitespace(existing).length === 0) {
+        sourceTitles.set(normalized, source.title ?? existing)
       }
     }
 
@@ -993,12 +956,16 @@ async function fetchOpenAiSearchSnippets(
     for (const [url, title] of sourceTitles) {
       const publisher = publisherFromUrl(url)
 
-      if (!publisher || !digest) {
+      if (!publisher) {
         continue
       }
 
       const excerpts = citationInfo.get(url)?.excerpts
       const quote = mergeExcerptsForQuote(excerpts, digest, url, urlOrder)
+
+      if (!compactWhitespace(quote)) {
+        continue
+      }
 
       urls.push(url)
       snippets.push({
@@ -1335,7 +1302,7 @@ async function fetchXaiSearchSnippets(
   }
 }
 
-async function fetchGeminiGroundedSearchSnippets(
+async function fetchGeminiSearchSnippets(
   symbol: string,
   companyName: string | undefined,
   industry: string | undefined,
@@ -1345,8 +1312,7 @@ async function fetchGeminiGroundedSearchSnippets(
   snippets: SourceSnippet[]
   diagnostics: SearchQueryDiagnostic[]
 }> {
-  const apiKey = process.env.GEMINI_API_KEY
-  const model = process.env.GEMINI_SEARCH_MODEL ?? "gemini-2.5-flash"
+  const model = process.env.CATALYST_GEMINI_SEARCH_MODEL
   const prompt = buildGroundedSearchPrompt(
     symbol,
     companyName,
@@ -1356,11 +1322,11 @@ async function fetchGeminiGroundedSearchSnippets(
   )
   const diagnosticBase = {
     bucket: "market_news" as const,
-    query: `Gemini grounded search: ${symbol}`,
+    query: `Gemini Google search: ${symbol}`,
     maxResults: 10,
   }
 
-  if (!apiKey) {
+  if (!model) {
     return {
       snippets: [],
       diagnostics: [
@@ -1369,163 +1335,187 @@ async function fetchGeminiGroundedSearchSnippets(
           resultCount: 0,
           keptCount: 0,
           urls: [],
-          error: "Missing GEMINI_API_KEY for Gemini grounded search",
+          error:
+            "Missing CATALYST_GEMINI_SEARCH_MODEL for Gemini Google search (AI Gateway model id, e.g. google/gemini-2.5-flash)",
         },
       ],
     }
   }
-
-  let response: Response
 
   try {
-    response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-        model
-      )}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: prompt }],
-            },
-          ],
-          tools: [{ google_search: {} }],
-        }),
-      }
-    )
-  } catch (err) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error: err instanceof Error ? err.message : String(err),
-        },
-      ],
-    }
-  }
-
-  if (!response.ok) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error: `Gemini HTTP ${response.status}`,
-        },
-      ],
-    }
-  }
-
-  let json: unknown
-  try {
-    json = await response.json()
-  } catch (err) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error: err instanceof Error ? err.message : String(err),
-        },
-      ],
-    }
-  }
-
-  const parsed = geminiGroundedSearchSchema.safeParse(json)
-  if (!parsed.success) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error: "Gemini response schema mismatch",
-        },
-      ],
-    }
-  }
-
-  const candidate = parsed.data.candidates?.[0]
-  const digest = compactWhitespace(
-    candidate?.content?.parts
-      ?.map((part) => part.text)
-      .filter((text): text is string => Boolean(text))
-      .join(" ") ?? ""
-  )
-  const snippets: SourceSnippet[] = []
-  const urls: string[] = []
-  const supports = readGeminiGroundingSupports(json)
-  const quotesByChunk = buildGeminiQuotesPerChunkIndex(supports, digest)
-  const chunks = candidate?.groundingMetadata?.groundingChunks ?? []
-  const urlOrder = chunks
-    .map((chunk) =>
-      chunk.web?.uri ? normalizeSourceUrl(chunk.web.uri) : null,
-    )
-    .filter((value): value is string => Boolean(value))
-
-  for (const [chunkIndex, chunk] of chunks.entries()) {
-    const url = chunk.web?.uri
-
-    if (!url || !digest) {
-      continue
-    }
-
-    const normalizedUrl = normalizeSourceUrl(url)
-    let publisher: string
-    try {
-      publisher = new URL(normalizedUrl).hostname.replace(/^www\./, "")
-    } catch {
-      continue
-    }
-
-    const title = chunk.web?.title?.trim() || publisher
-
-    if (urls.includes(normalizedUrl)) {
-      continue
-    }
-
-    urls.push(normalizedUrl)
-    const excerpts = quotesByChunk.get(chunkIndex)
-    const quote = mergeExcerptsForQuote(excerpts, digest, normalizedUrl, urlOrder)
-
-    snippets.push({
-      url: normalizedUrl,
-      title,
-      publisher,
-      quote,
+    const result = await generateText({
+      model,
+      tools: {
+        google_search: google.tools.googleSearch({}),
+      } as ToolSet,
+      toolChoice: { type: "tool", toolName: "google_search" },
+      prompt,
     })
-  }
 
-  return {
-    snippets,
-    diagnostics: [
-      {
-        ...diagnosticBase,
-        resultCount:
-          candidate?.groundingMetadata?.groundingChunks?.length ??
-          candidate?.groundingMetadata?.webSearchQueries?.length ??
-          0,
-        keptCount: snippets.length,
-        urls: urls.slice(0, MAX_DIAGNOSTIC_URLS_PER_QUERY),
-      },
-    ],
+    const digest = compactWhitespace(result.text)
+    const googleMeta =
+      result.providerMetadata?.google as GoogleGenerativeAIProviderMetadata | undefined
+
+    const grounding = googleMeta?.groundingMetadata
+
+    const supportsUnknown =
+      grounding?.groundingSupports != null &&
+      Array.isArray(grounding.groundingSupports)
+        ? (grounding.groundingSupports as unknown[])
+        : ([] as unknown[])
+
+    const quotesByChunk = buildGeminiQuotesPerChunkIndex(supportsUnknown, digest)
+
+    type GeminiWebChunk = {
+      web?: { uri?: string | null; title?: string | null } | null
+    }
+
+    const groundingChunksUnknown = grounding?.groundingChunks
+    const chunks: GeminiWebChunk[] =
+      groundingChunksUnknown !== null &&
+      groundingChunksUnknown !== undefined &&
+      Array.isArray(groundingChunksUnknown)
+        ? (groundingChunksUnknown as GeminiWebChunk[])
+        : []
+
+    const sourceTitles = new Map<string, string | undefined>()
+
+    for (const source of result.sources) {
+      if (source.sourceType !== "url") {
+        continue
+      }
+
+      sourceTitles.set(normalizeSourceUrl(source.url), source.title ?? undefined)
+    }
+
+    const snippets: SourceSnippet[] = []
+    const urls: string[] = []
+    const urlOrder = chunks
+      .map((chunk) =>
+        chunk.web?.uri ? normalizeSourceUrl(chunk.web.uri) : null,
+      )
+      .filter((value): value is string => Boolean(value))
+
+    for (const [chunkIndex, chunk] of chunks.entries()) {
+      const uri = chunk.web?.uri ?? undefined
+
+      if (!uri || !digest) {
+        continue
+      }
+
+      const normalizedUrl = normalizeSourceUrl(uri)
+      const publisher = publisherFromUrl(normalizedUrl)
+
+      if (!publisher) {
+        continue
+      }
+
+      const preferredTitle =
+        compactWhitespace(chunk.web?.title ?? "") ||
+        sourceTitles.get(normalizedUrl)
+
+      const title =
+        preferredTitle &&
+        compactWhitespace(preferredTitle).length > 0 ?
+          compactWhitespace(preferredTitle)
+        : publisher
+
+      if (urls.includes(normalizedUrl)) {
+        continue
+      }
+
+      urls.push(normalizedUrl)
+      const excerpts = quotesByChunk.get(chunkIndex)
+      const quote = mergeExcerptsForQuote(excerpts, digest, normalizedUrl, urlOrder)
+
+      snippets.push({
+        url: normalizedUrl,
+        title,
+        publisher,
+        quote,
+      })
+    }
+
+    const urlOrderFallback = result.sources
+      .filter(
+        (
+          source,
+        ): source is typeof source & { url: string } =>
+          source.sourceType === "url" &&
+          typeof source.url === "string" &&
+          source.url.length > 0,
+      )
+      .map((source) => normalizeSourceUrl(source.url))
+
+    if (snippets.length === 0 && digest) {
+      const seenFallback = new Set(urls)
+
+      for (const source of result.sources) {
+        if (source.sourceType !== "url") {
+          continue
+        }
+
+        const normalizedUrl = normalizeSourceUrl(source.url)
+        const publisher = publisherFromUrl(normalizedUrl)
+
+        if (!publisher || seenFallback.has(normalizedUrl)) {
+          continue
+        }
+
+        seenFallback.add(normalizedUrl)
+        urls.push(normalizedUrl)
+        snippets.push({
+          url: normalizedUrl,
+          title:
+            compactWhitespace(source.title ?? "").length > 0 ?
+              compactWhitespace(source.title!)
+            : publisher,
+          publisher,
+          quote: mergeExcerptsForQuote(
+            undefined,
+            digest,
+            normalizedUrl,
+            urlOrderFallback.length > 0 ?
+              urlOrderFallback
+            : [normalizedUrl],
+          ),
+        })
+      }
+    }
+
+    const queriesLen =
+      grounding?.webSearchQueries != null &&
+      Array.isArray(grounding.webSearchQueries)
+        ? grounding.webSearchQueries.length
+        : 0
+
+    const resultCount =
+      chunks.length !== 0 ? chunks.length : queriesLen || snippets.length || 0
+
+    return {
+      snippets,
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount,
+          keptCount: snippets.length,
+          urls: urls.slice(0, MAX_DIAGNOSTIC_URLS_PER_QUERY),
+        },
+      ],
+    }
+  } catch (err) {
+    return {
+      snippets: [],
+      diagnostics: [
+        {
+          ...diagnosticBase,
+          resultCount: 0,
+          keptCount: 0,
+          urls: [],
+          error: err instanceof Error ? err.message : String(err),
+        },
+      ],
+    }
   }
 }
 
@@ -1549,7 +1539,7 @@ async function fetchHostedSearchSnippets(
     providers.map((provider) => {
       switch (provider) {
         case "gemini":
-          return fetchGeminiGroundedSearchSnippets(
+          return fetchGeminiSearchSnippets(
             symbol,
             companyName,
             industry,
