@@ -61,7 +61,6 @@ const finnhubStockEarningsRowSchema = z.record(z.string(), z.unknown())
 
 const MAX_RESEARCH_ATTEMPTS = 2
 const MAX_WEB_SNIPPETS = 48
-const ANONYMOUS_WEB_QUERY_BUDGET = 10
 const MAX_DIAGNOSTIC_URLS_PER_QUERY = 6
 const WEB_SNIPPET_QUOTE_LENGTH = 1200
 const TICKER_VALIDATION_PROVIDER = "finnhub-profile2+quote+earnings"
@@ -1779,13 +1778,9 @@ export const runResearch = internalAction({
         researchStartedAt,
         finnhub.finnhubIndustry
       )
-      const webSearchQueryBudget =
-        run.source === "anonymous"
-          ? Math.min(ANONYMOUS_WEB_QUERY_BUDGET, webSearchPlan.length)
-          : webSearchPlan.length
       const selectedWebSearchPlan = selectBalancedSearchPlan(
         webSearchPlan,
-        webSearchQueryBudget
+        webSearchPlan.length
       )
 
       const hostedResearch = await fetchHostedSearchSnippets(
