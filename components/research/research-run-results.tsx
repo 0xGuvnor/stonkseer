@@ -29,7 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -71,11 +70,6 @@ function LoadingState({ label }: { label: string }) {
           This usually takes a moment while we gather catalysts from market and
           web sources.
         </p>
-      </div>
-      <div className="flex w-full max-w-md flex-col gap-3">
-        <Skeleton className="h-11 w-full" />
-        <Skeleton className="h-11 w-full" />
-        <Skeleton className="h-11 w-full opacity-75" />
       </div>
     </div>
   )
