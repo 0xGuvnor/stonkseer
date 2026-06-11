@@ -1,7 +1,15 @@
+import { Briefcase } from "lucide-react"
+
+import { EmptyState } from "@/components/empty-state"
+
 export default function PortfoliosPage() {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-8">
-      <p className="text-muted-foreground">Coming soon.</p>
-    </div>
+    <EmptyState
+      icon={Briefcase}
+      eyebrow="Coming soon"
+      title="Your portfolios live here"
+      description="Save catalyst research from any ticker and we'll organize it into portfolios you can track over time."
+      cta={{ label: "Research a ticker", href: "/" }}
+    />
   )
 }

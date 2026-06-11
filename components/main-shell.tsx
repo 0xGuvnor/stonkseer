@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react"
 
+import { AppBackground } from "@/components/app-background"
 import { AppSidebar } from "@/components/app-sidebar"
 import {
   SidebarInset,
@@ -13,12 +14,15 @@ export function MainShell({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset className="min-h-svh bg-background">
-        {/* Mobile-only: sidebar has no visible trigger without a top bar */}
-        <div className="sticky top-0 z-40 flex h-11 items-center border-b bg-background px-3 md:hidden">
-          <SidebarTrigger />
+      <SidebarInset className="relative min-h-0 md:peer-data-[variant=inset]:glow-brand">
+        <AppBackground className="md:rounded-2xl" />
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+          {/* Mobile-only: blurred, borderless top bar with the sidebar trigger */}
+          <div className="glass sticky top-0 z-40 flex h-12 items-center px-3 md:hidden">
+            <SidebarTrigger />
+          </div>
+          {children}
         </div>
-        {children}
       </SidebarInset>
     </SidebarProvider>
   )

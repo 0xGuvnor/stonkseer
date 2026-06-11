@@ -1,7 +1,15 @@
+import { Calendar } from "lucide-react"
+
+import { EmptyState } from "@/components/empty-state"
+
 export default function CalendarPage() {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-8">
-      <p className="text-muted-foreground">Coming soon.</p>
-    </div>
+    <EmptyState
+      icon={Calendar}
+      eyebrow="Coming soon"
+      title="A timeline of what's next"
+      description="Upcoming catalysts from your saved portfolios will appear here on a unified calendar so nothing catches you off guard."
+      cta={{ label: "Research a ticker", href: "/" }}
+    />
   )
 }

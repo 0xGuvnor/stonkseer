@@ -3,7 +3,7 @@
 import { useAuth } from "@clerk/nextjs"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useAction, useConvexAuth } from "convex/react"
-import { ArrowRight, Search, TrendingUp } from "lucide-react"
+import { ArrowRight, Loader2, Search, TrendingUp } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
@@ -111,27 +111,33 @@ export function HomeResearchClient() {
     }
   }
 
+  const isSubmitting = form.formState.isSubmitting
+
   return (
-    <section className="mx-auto flex min-h-[calc(100svh-2.75rem)] w-full max-w-3xl flex-col items-center justify-center gap-8 px-6 pb-12 md:min-h-svh">
+    <section className="mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-3xl flex-col items-center justify-center gap-8 px-5 pb-12 sm:px-6 md:min-h-full">
       <div className="flex w-full max-w-xl flex-col items-center text-center">
-        <Badge variant="secondary" className="mb-5 px-3 py-1">
-          <span className="size-1.5 animate-pulse rounded-full bg-green-500" />
-          AI-powered stocks catalyst research
-        </Badge>
-        <h1 className="max-w-3xl font-heading text-3xl font-semibold tracking-tight md:text-4xl">
-          What&apos;s moving your{" "}
-          <span className="bg-linear-to-r from-primary to-chart-2 bg-clip-text text-transparent">
-            stonks?
+        <Badge
+          variant="secondary"
+          className="glass mb-6 gap-2 rounded-full border-0 px-3.5 py-1.5 text-xs font-medium ring-1 ring-border/60"
+        >
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/70" />
+            <span className="bg-gradient-brand relative inline-flex size-2 rounded-full" />
           </span>
+          AI-powered stock catalyst research
+        </Badge>
+        <h1 className="font-heading text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+          What&apos;s moving your{" "}
+          <span className="text-gradient-brand">stonks?</span>
         </h1>
-        <p className="mt-4 max-w-xl text-muted-foreground">
-          Enter any ticker to get AI-researched catalysts for the next 12 months
-          — earnings, product launches, regulatory events, and more.
+        <p className="mt-4 max-w-md text-base text-pretty text-muted-foreground sm:text-lg">
+          Enter any ticker for AI-researched catalysts over the next 12 months —
+          earnings, product launches, regulatory events, and more.
         </p>
 
         <Form {...form}>
           <form
-            className="mt-8 w-full max-w-xl"
+            className="mt-9 w-full max-w-xl"
             onSubmit={form.handleSubmit(onResearchSubmit)}
           >
             <FormField
@@ -139,16 +145,16 @@ export function HomeResearchClient() {
               name="symbol"
               render={({ field }) => (
                 <FormItem>
-                  <div className="relative flex w-full items-center">
+                  <div className="group glass relative flex w-full items-center rounded-full p-1.5 shadow-lg ring-1 ring-border/70 transition-shadow focus-within:ring-2 focus-within:ring-primary/60 focus-within:shadow-primary/10">
                     <Search
                       aria-hidden
-                      className="pointer-events-none absolute left-4 size-5 text-muted-foreground"
+                      className="pointer-events-none absolute left-5 size-5 text-muted-foreground transition-colors group-focus-within:text-primary"
                     />
                     <FormControl>
                       <Input
                         aria-label="Ticker symbol"
                         autoComplete="off"
-                        className="h-14 rounded-full border pr-14 pl-12 uppercase shadow-sm placeholder:normal-case"
+                        className="h-12 border-0 bg-transparent pr-14 pl-12 text-base uppercase shadow-none ring-0 outline-none placeholder:normal-case focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
                         maxLength={10}
                         placeholder="Enter a ticker, e.g. AAPL"
                         {...field}
@@ -157,32 +163,32 @@ export function HomeResearchClient() {
                     </FormControl>
                     <Button
                       aria-label={
-                        form.formState.isSubmitting
-                          ? "Starting research"
-                          : "Research"
+                        isSubmitting ? "Starting research" : "Research"
                       }
-                      className="absolute top-1/2 right-2 size-10 -translate-y-1/2 rounded-full active:not-aria-[haspopup]:-translate-y-1/2"
+                      className="bg-gradient-brand size-11 shrink-0 rounded-full text-primary-foreground shadow-md transition-transform hover:scale-105 hover:brightness-105 disabled:hover:scale-100"
                       disabled={
-                        form.formState.isSubmitting ||
-                        !form.formState.isValid ||
-                        !clerkLoaded
+                        isSubmitting || !form.formState.isValid || !clerkLoaded
                       }
                       size="icon"
                       type="submit"
                     >
-                      <ArrowRight className="size-5" />
+                      {isSubmitting ? (
+                        <Loader2 className="size-5 animate-spin" />
+                      ) : (
+                        <ArrowRight className="size-5" />
+                      )}
                     </Button>
                   </div>
-                  <FormMessage className="text-center" />
+                  <FormMessage className="mt-2.5 text-center" />
                 </FormItem>
               )}
             />
           </form>
         </Form>
 
-        <div className="mt-10 flex w-full max-w-xl flex-col gap-3">
+        <div className="mt-10 flex w-full max-w-xl flex-col items-center gap-3.5">
           <div className="flex items-center justify-center gap-2 text-muted-foreground">
-            <TrendingUp aria-hidden className="size-4 shrink-0" />
+            <TrendingUp aria-hidden className="size-3.5 shrink-0" />
             <span className="text-[0.65rem] font-semibold tracking-[0.2em] uppercase">
               Popular
             </span>
@@ -194,7 +200,7 @@ export function HomeResearchClient() {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="rounded-full px-3 font-medium"
+                className="rounded-full border-border/70 bg-card/50 px-3.5 font-medium tracking-wide backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:text-primary"
                 onClick={() =>
                   form.setValue("symbol", symbol, {
                     shouldValidate: true,
@@ -211,7 +217,7 @@ export function HomeResearchClient() {
 
       {message ? (
         <div className="w-full max-w-xl">
-          <Alert className="text-left">
+          <Alert className="glass text-left">
             <AlertDescription>{message}</AlertDescription>
           </Alert>
         </div>
