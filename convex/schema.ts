@@ -137,8 +137,13 @@ export default defineSchema({
     strategyVersion: v.string(),
     searchQueryCount: v.number(),
     snippetCount: v.number(),
-    candidateCount: v.number(),
+    candidateCount: v.optional(v.number()),
     extractionEventCount: v.number(),
+    deepReadUrlCount: v.optional(v.number()),
+    deepReadSuccessCount: v.optional(v.number()),
+    citationDroppedCount: v.optional(v.number()),
+    followUpQueryCount: v.optional(v.number()),
+    reportDerivedSourceCount: v.optional(v.number()),
     queries: v.array(
       v.object({
         bucket: v.string(),
@@ -149,16 +154,19 @@ export default defineSchema({
         keptCount: v.number(),
         urls: v.array(v.string()),
         error: v.optional(v.string()),
+        reportChars: v.optional(v.number()),
       }),
     ),
-    candidates: v.array(
-      v.object({
-        label: v.string(),
-        category: v.string(),
-        score: v.number(),
-        reason: v.string(),
-        sourceUrls: v.array(v.string()),
-      }),
+    candidates: v.optional(
+      v.array(
+        v.object({
+          label: v.string(),
+          category: v.string(),
+          score: v.number(),
+          reason: v.string(),
+          sourceUrls: v.array(v.string()),
+        }),
+      ),
     ),
     createdAt: v.number(),
   })
@@ -211,6 +219,7 @@ export default defineSchema({
     accessedAt: v.number(),
     quote: v.string(),
     supportsFields: v.array(v.string()),
+    provenance: v.optional(v.string()),
   })
     .index("by_event", ["eventId"])
     .index("by_url", ["url"]),

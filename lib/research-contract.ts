@@ -41,6 +41,7 @@ export const catalystSourceSchema = z.object({
   publishedAt: z.string().optional(),
   quote: z.string().min(1),
   supportsFields: z.array(z.string().min(1)).min(1),
+  provenance: z.enum(["evidence_snippet", "report_derived"]).optional(),
 })
 
 export const catalystEventSchema = z.object({

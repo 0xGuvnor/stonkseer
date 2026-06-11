@@ -1,1 +1,1 @@
-export const RESEARCH_STRATEGY_VERSION = "balanced-discovery-v4"
+export const RESEARCH_STRATEGY_VERSION = "report-merge-v8"

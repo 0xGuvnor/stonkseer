@@ -19,16 +19,27 @@ import {
   type CatalystResearch,
 } from "../lib/research-contract"
 import {
-  buildResearchCandidates,
-  buildSearchQueries,
   compactWhitespace,
   diversifySnippetsByDomain,
-  selectBalancedSearchPlan,
-  type ResearchCandidate,
-  type SearchQuery,
+  excerptOnlyQuote,
   type SearchQueryDiagnostic,
+  type SnippetProvenance,
   type SourceSnippet,
 } from "../lib/research-discovery"
+import {
+  fetchExaPageContents,
+  getDeepReadMaxUrls,
+  mergeDeepReadSnippets,
+  rankUrlsForDeepRead,
+} from "../lib/research-exa"
+import {
+  buildFollowUpQueryPrompt,
+  getFollowUpMaxQueries,
+  parseFollowUpQueries,
+  runFollowUpSearches,
+} from "../lib/research-followup"
+import { verifyAndFilterEvents } from "../lib/research-grounding"
+import { formatResearchBreadthExtractionBlock } from "../lib/research-themes"
 import {
   isTickerSymbolSyntaxValid,
   normalizeTickerSymbol,
@@ -59,10 +70,29 @@ const finnhubQuoteSchema = z
 
 const finnhubStockEarningsRowSchema = z.record(z.string(), z.unknown())
 
+const finnhubEarningsCalendarRowSchema = z
+  .object({
+    date: z.string(),
+    symbol: z.string().optional(),
+    hour: z.string().optional(),
+    quarter: z.number().optional(),
+    year: z.number().optional(),
+    epsEstimate: z.number().optional(),
+  })
+  .passthrough()
+
+const finnhubEarningsCalendarSchema = z
+  .object({
+    earningsCalendar: z.array(finnhubEarningsCalendarRowSchema).optional(),
+  })
+  .passthrough()
+
+type FinnhubEarningsCalendarRow = z.infer<typeof finnhubEarningsCalendarRowSchema>
+
 const MAX_RESEARCH_ATTEMPTS = 2
-const MAX_WEB_SNIPPETS = 48
+const MAX_WEB_SNIPPETS = 64
 const MAX_DIAGNOSTIC_URLS_PER_QUERY = 6
-const WEB_SNIPPET_QUOTE_LENGTH = 1200
+const WEB_SNIPPET_QUOTE_LENGTH = 2500
 const TICKER_VALIDATION_PROVIDER = "finnhub-profile2+quote+earnings"
 const VALID_TICKER_VALIDATION_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const INVALID_TICKER_VALIDATION_TTL_MS = 24 * 60 * 60 * 1000
@@ -74,6 +104,15 @@ const HOSTED_SEARCH_PROVIDERS = [
 ] as const
 
 type HostedSearchProvider = (typeof HOSTED_SEARCH_PROVIDERS)[number]
+
+/** One search provider's research output: the synthesized report plus attributed tool excerpts. */
+type ProviderResearchResult = {
+  provider: HostedSearchProvider
+  report: string
+  snippets: SourceSnippet[]
+  seenUrls: string[]
+  diagnostics: SearchQueryDiagnostic[]
+}
 
 const exaSearchApiResponseSchema = z
   .object({
@@ -147,6 +186,92 @@ const anonymousRequestRunReturn = v.object({
   remainingAnonymousRuns: v.number(),
 })
 
+const missingResearchEnvWarned = new Set<string>()
+
+/** Logs each missing-configuration case at most once per warm action isolate (reduces Convex log spam). */
+function warnExpectedEnvMissing(envKeyLabel: string, detail: string) {
+  if (missingResearchEnvWarned.has(envKeyLabel)) {
+    return
+  }
+
+  missingResearchEnvWarned.add(envKeyLabel)
+  console.warn(
+    `[stonkseer-research] Expected ${envKeyLabel} is not set: ${detail}`,
+  )
+}
+
+function hasAiGatewayCredential(): boolean {
+  return Boolean(
+    process.env.AI_GATEWAY_API_KEY?.trim() ||
+      process.env.VERCEL_OIDC_TOKEN?.trim(),
+  )
+}
+
+function warnHostedSearchAndGatewayEnvGaps(): void {
+  const providers = enabledHostedSearchProviders()
+  const gatewayModel = process.env.AI_GATEWAY_MODEL?.trim()
+  const needsGatewayRouting = Boolean(gatewayModel) || providers.length > 0
+
+  if (
+    needsGatewayRouting &&
+    !hasAiGatewayCredential()
+  ) {
+    warnExpectedEnvMissing(
+      "AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN",
+      "needed for Gateway-routed models when AI_GATEWAY_MODEL is set and/or catalyst hosted search providers are configured in CATALYST_HOSTED_SEARCH_PROVIDERS",
+    )
+  }
+
+  if (!gatewayModel && providers.length > 0) {
+    warnExpectedEnvMissing(
+      "AI_GATEWAY_MODEL",
+      "set for structured catalyst extraction after hosted web search collects snippets",
+    )
+  }
+
+  if (providers.includes("openai")) {
+    if (!process.env.CATALYST_OPENAI_SEARCH_MODEL?.trim()) {
+      warnExpectedEnvMissing(
+        "CATALYST_OPENAI_SEARCH_MODEL",
+        "required because the OpenAI + Exa hosted search provider is enabled",
+      )
+    }
+    if (!process.env.EXA_API_KEY?.trim()) {
+      warnExpectedEnvMissing(
+        "EXA_API_KEY",
+        "required because the OpenAI + Exa hosted search provider is enabled",
+      )
+    }
+  }
+
+  if (providers.includes("anthropic")) {
+    if (!process.env.CATALYST_ANTHROPIC_SEARCH_MODEL?.trim()) {
+      warnExpectedEnvMissing(
+        "CATALYST_ANTHROPIC_SEARCH_MODEL",
+        "required because the anthropic hosted search provider is enabled",
+      )
+    }
+  }
+
+  if (providers.includes("xai")) {
+    if (!process.env.CATALYST_XAI_SEARCH_MODEL?.trim()) {
+      warnExpectedEnvMissing(
+        "CATALYST_XAI_SEARCH_MODEL",
+        "required because the xai hosted search provider is enabled",
+      )
+    }
+  }
+
+  if (providers.includes("gemini")) {
+    if (!process.env.CATALYST_GEMINI_SEARCH_MODEL?.trim()) {
+      warnExpectedEnvMissing(
+        "CATALYST_GEMINI_SEARCH_MODEL",
+        "required because the gemini hosted search provider is enabled",
+      )
+    }
+  }
+}
+
 function normalizeSourceUrl(value: string) {
   try {
     const url = new URL(value)
@@ -164,12 +289,6 @@ function publisherFromUrl(value: string) {
   } catch {
     return null
   }
-}
-
-function isXPostPublisher(hostname: string) {
-  const host = hostname.replace(/^www\./, "").toLowerCase()
-
-  return host === "x.com" || host === "twitter.com" || host.endsWith(".x.com")
 }
 
 /** Gateway/source metadata often uses the tweet id as `title`, which is not a display title. */
@@ -297,21 +416,26 @@ function enabledHostedSearchProviders(): HostedSearchProvider[] {
 function openAiExaAgentMaxSteps(): number {
   const value = Number(process.env.CATALYST_OPENAI_EXA_AGENT_MAX_STEPS)
 
-  return Number.isInteger(value) && value >= 2 && value <= 25 ? value : 5
+  return Number.isInteger(value) && value >= 2 && value <= 25 ? value : 8
 }
 
 function anthropicWebSearchMaxUses() {
   const value = Number(process.env.CATALYST_ANTHROPIC_WEB_SEARCH_MAX_USES)
 
-  return Number.isInteger(value) && value > 0 ? value : 5
+  return Number.isInteger(value) && value > 0 ? value : 8
 }
 
-function dedupeSnippetsByUrl(snippets: SourceSnippet[], max: number) {
+function dedupeSnippetsByUrl(snippets: SourceSnippet[], max: number): {
+  snippets: SourceSnippet[]
+  urlHitCounts: Map<string, number>
+} {
   const seen = new Set<string>()
   const unique: SourceSnippet[] = []
+  const urlHitCounts = new Map<string, number>()
 
   for (const snippet of snippets) {
     const normalizedUrl = normalizeSourceUrl(snippet.url)
+    urlHitCounts.set(normalizedUrl, (urlHitCounts.get(normalizedUrl) ?? 0) + 1)
 
     if (seen.has(normalizedUrl)) {
       continue
@@ -324,7 +448,10 @@ function dedupeSnippetsByUrl(snippets: SourceSnippet[], max: number) {
     })
   }
 
-  return diversifySnippetsByDomain(unique, max)
+  return {
+    snippets: diversifySnippetsByDomain(unique, max),
+    urlHitCounts,
+  }
 }
 
 function clipSnippetQuote(text: string): string {
@@ -335,83 +462,6 @@ function clipSnippetQuote(text: string): string {
   }
 
   return `${t.slice(0, WEB_SNIPPET_QUOTE_LENGTH - 1).trimEnd()}…`
-}
-
-function hostnameHint(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "").toLowerCase()
-  } catch {
-    return ""
-  }
-}
-
-/** When no URL-specific excerpt exists, prefer sentences mentioning the hostname; else round-robin by URL order. */
-function fallbackQuoteForUrl(
-  digest: string,
-  url: string,
-  urlOrder: string[],
-): string {
-  const compactDigest = compactWhitespace(digest)
-
-  if (!compactDigest) {
-    return ""
-  }
-
-  const sentences = compactDigest
-    .split(/(?<=[.!?])\s+/)
-    .map(compactWhitespace)
-    .filter(Boolean)
-
-  if (sentences.length === 0) {
-    return clipSnippetQuote(compactDigest)
-  }
-
-  const host = hostnameHint(url)
-  const hostParts = host.split(".").filter((p) => p.length > 2)
-  const hostMatches = sentences.filter((sentence) => {
-    const lower = sentence.toLowerCase()
-
-    if (host && lower.includes(host)) {
-      return true
-    }
-
-    return hostParts.some((part) => lower.includes(part))
-  })
-
-  if (hostMatches.length > 0) {
-    return clipSnippetQuote(hostMatches.join(" "))
-  }
-
-  const position = urlOrder.indexOf(url)
-
-  if (position >= 0) {
-    return clipSnippetQuote(
-      sentences[position % sentences.length] ?? compactDigest,
-    )
-  }
-
-  return clipSnippetQuote(compactDigest)
-}
-
-function mergeExcerptsForQuote(
-  excerpts: string[] | undefined,
-  digestFallback: string,
-  url: string,
-  urlOrder: string[],
-): string {
-  const unique = Array.from(
-    new Set(
-      (excerpts ?? [])
-        .map(compactWhitespace)
-        .filter((value) => value.length > 0),
-    ),
-  )
-
-  if (unique.length > 0) {
-    return clipSnippetQuote(unique.join(" "))
-  }
-
-  return fallbackQuoteForUrl(digestFallback, url, urlOrder)
 }
 
 function collectEvidenceFromExaToolOutputs(outputs: unknown[]) {
@@ -609,21 +659,36 @@ function formatFinnhubEarningsRow(row: Record<string, unknown>) {
   return `${period}${surprise}`.trim()
 }
 
-async function fetchFinnhubMarketContext(symbol: string): Promise<{
+async function fetchFinnhubMarketContext(
+  symbol: string,
+  now: number,
+): Promise<{
   isValid: boolean
   companyName?: string
   exchange?: string
   companyWebsite?: string
   finnhubIndustry?: string
   snippets: SourceSnippet[]
+  baselineEvents: CatalystResearch["events"]
 }> {
   const apiKey = process.env.FINNHUB_API_KEY
 
   if (!apiKey) {
-    return { isValid: false, snippets: [], finnhubIndustry: undefined }
+    warnExpectedEnvMissing(
+      "FINNHUB_API_KEY",
+      "Finnhub validates tickers and supplies company profile and earnings snippets used in research",
+    )
+    return {
+      isValid: false,
+      snippets: [],
+      finnhubIndustry: undefined,
+      baselineEvents: [],
+    }
   }
 
   const token = encodeURIComponent(apiKey)
+  const fromDate = new Date(now).toISOString().slice(0, 10)
+  const toDate = new Date(now + 366 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(
     symbol
   )}&token=${token}`
@@ -633,8 +698,12 @@ async function fetchFinnhubMarketContext(symbol: string): Promise<{
   const earningsUrl = `https://finnhub.io/api/v1/stock/earnings?symbol=${encodeURIComponent(
     symbol
   )}&token=${token}`
+  const calendarUrl = `https://finnhub.io/api/v1/calendar/earnings?from=${fromDate}&to=${toDate}&symbol=${encodeURIComponent(
+    symbol
+  )}&token=${token}`
 
-  const [profileResponse, quoteResponse, earningsResponse] = await Promise.all([
+  const [profileResponse, quoteResponse, earningsResponse, calendarResponse] =
+    await Promise.all([
     fetch(profileUrl, {
       headers: {
         accept: "application/json",
@@ -653,17 +722,33 @@ async function fetchFinnhubMarketContext(symbol: string): Promise<{
         "user-agent": "stonkseer-research-bot/0.1",
       },
     }),
+    fetch(calendarUrl, {
+      headers: {
+        accept: "application/json",
+        "user-agent": "stonkseer-research-bot/0.1",
+      },
+    }),
   ])
 
   if (!profileResponse.ok) {
-    return { isValid: false, snippets: [], finnhubIndustry: undefined }
+    return {
+      isValid: false,
+      snippets: [],
+      finnhubIndustry: undefined,
+      baselineEvents: [],
+    }
   }
 
   const profileJson: unknown = await profileResponse.json()
   const profileParsed = finnhubProfileSchema.safeParse(profileJson)
 
   if (!profileParsed.success) {
-    return { isValid: false, snippets: [], finnhubIndustry: undefined }
+    return {
+      isValid: false,
+      snippets: [],
+      finnhubIndustry: undefined,
+      baselineEvents: [],
+    }
   }
 
   const profile = profileParsed.data
@@ -693,28 +778,32 @@ async function fetchFinnhubMarketContext(symbol: string): Promise<{
 
   const snippets: SourceSnippet[] = []
 
-  snippets.push({
-    url: "https://finnhub.io/docs/api/introduction",
-    title: `${symbol} Finnhub company profile`,
-    publisher: "Finnhub",
-    quote: [
-      `Finnhub company profile data for ${symbol}.`,
-      companyName ? `Name: ${companyName}.` : null,
-      exchange ? `Exchange: ${exchange}.` : null,
-      profile.finnhubIndustry ? `Industry: ${profile.finnhubIndustry}.` : null,
-      companyWebsite ? `Website: ${companyWebsite}.` : null,
-    ]
-      .filter(Boolean)
-      .join(" "),
-  })
+  snippets.push(
+    finnhubSnippet({
+      url: "https://finnhub.io/docs/api/introduction",
+      title: `${symbol} Finnhub company profile`,
+      publisher: "Finnhub",
+      quote: [
+        `Finnhub company profile data for ${symbol}.`,
+        companyName ? `Name: ${companyName}.` : null,
+        exchange ? `Exchange: ${exchange}.` : null,
+        profile.finnhubIndustry ? `Industry: ${profile.finnhubIndustry}.` : null,
+        companyWebsite ? `Website: ${companyWebsite}.` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    }),
+  )
 
   if (quoteParsed && typeof quoteParsed.c === "number") {
-    snippets.push({
-      url: "https://finnhub.io/docs/api/quote",
-      title: `${symbol} Finnhub quote snapshot`,
-      publisher: "Finnhub",
-      quote: `Finnhub quote snapshot includes last price ${quoteParsed.c}.`,
-    })
+    snippets.push(
+      finnhubSnippet({
+        url: "https://finnhub.io/docs/api/quote",
+        title: `${symbol} Finnhub quote snapshot`,
+        publisher: "Finnhub",
+        quote: `Finnhub quote snapshot includes last price ${quoteParsed.c}.`,
+      }),
+    )
   }
 
   if (earningsResponse.ok) {
@@ -732,23 +821,68 @@ async function fetchFinnhubMarketContext(symbol: string): Promise<{
         .slice(0, 6)
 
       if (formatted.length > 0) {
-        snippets.push({
-          url: "https://finnhub.io/docs/api/stock-earnings",
-          title: `${symbol} Finnhub earnings history`,
-          publisher: "Finnhub",
-          quote: `Finnhub earnings history includes: ${formatted.join("; ")}.`,
-        })
+        snippets.push(
+          finnhubSnippet({
+            url: "https://finnhub.io/docs/api/stock-earnings",
+            title: `${symbol} Finnhub earnings history`,
+            publisher: "Finnhub",
+            quote: `Finnhub earnings history includes: ${formatted.join("; ")}.`,
+          }),
+        )
       } else {
-        snippets.push({
-          url: "https://finnhub.io/docs/api/stock-earnings",
-          title: `${symbol} Finnhub earnings data`,
-          publisher: "Finnhub",
-          quote:
-            "Finnhub returned earnings-related fundamentals data for this symbol (earnings endpoint responded).",
-        })
+        snippets.push(
+          finnhubSnippet({
+            url: "https://finnhub.io/docs/api/stock-earnings",
+            title: `${symbol} Finnhub earnings data`,
+            publisher: "Finnhub",
+            quote:
+              "Finnhub returned earnings-related fundamentals data for this symbol (earnings endpoint responded).",
+          }),
+        )
       }
     }
   }
+
+  let calendarRows: FinnhubEarningsCalendarRow[] = []
+
+  if (calendarResponse.ok) {
+    const calendarJson: unknown = await calendarResponse.json()
+    const calendarParsed = finnhubEarningsCalendarSchema.safeParse(calendarJson)
+
+    if (calendarParsed.success) {
+      calendarRows = (calendarParsed.data.earningsCalendar ?? []).filter(
+        (row) =>
+          row.symbol?.toUpperCase() === symbol ||
+          !row.symbol ||
+          row.date >= fromDate,
+      )
+    }
+  }
+
+  if (calendarRows.length > 0) {
+    const formattedCalendar = calendarRows
+      .slice(0, 8)
+      .map((row) => {
+        const quarter =
+          typeof row.quarter === "number" ? `Q${row.quarter}` : "upcoming"
+        const year = typeof row.year === "number" ? String(row.year) : ""
+        const hour = row.hour ? ` (${row.hour})` : ""
+
+        return `${row.date} ${quarter} ${year}${hour}`.trim()
+      })
+      .join("; ")
+
+    snippets.push(
+      finnhubSnippet({
+        url: "https://finnhub.io/docs/api/earnings-calendar",
+        title: `${symbol} Finnhub upcoming earnings calendar`,
+        publisher: "Finnhub",
+        quote: `Finnhub upcoming earnings calendar for ${symbol}: ${formattedCalendar}.`,
+      }),
+    )
+  }
+
+  const baselineEvents = buildFinnhubBaselineEvents(symbol, snippets, calendarRows)
 
   return {
     isValid,
@@ -760,6 +894,7 @@ async function fetchFinnhubMarketContext(symbol: string): Promise<{
         ? profile.finnhubIndustry
         : undefined,
     snippets,
+    baselineEvents,
   }
 }
 
@@ -788,7 +923,7 @@ async function validateTicker(
     }
   }
 
-  const finnhub = await fetchFinnhubMarketContext(symbol)
+  const finnhub = await fetchFinnhubMarketContext(symbol, now)
   const validation = {
     isValid: finnhub.isValid,
     companyName: finnhub.companyName,
@@ -813,101 +948,139 @@ function assertTickerExists(validation: TickerValidation) {
   }
 }
 
-function buildGroundedSearchPrompt(
+function buildCatalystReportPrompt(
   symbol: string,
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
-  selectedPlan: SearchQuery[]
 ) {
   const today = new Date(now).toISOString().slice(0, 10)
   const companyLabel = companyName ? `${companyName} (${symbol})` : symbol
-  const queryHints = selectedPlan
-    .slice(0, 10)
-    .map((query) => `- [${query.bucket}] ${query.query}`)
-    .join("\n")
 
   return [
-    `Today is ${today}. Search the web for upcoming stock catalysts for ${companyLabel} over the next 12 months.`,
+    `Today is ${today}. Research upcoming stock catalysts for ${companyLabel} over the next 12 months, then write a thorough catalyst research report.`,
     industry ? `Industry context: ${industry}.` : "",
-    "Do not use ticker-specific event maps. Discover catalysts from current sources and infer event names, regulator timelines, launches, conferences, and partnership milestones from the web evidence.",
-    "For regulated companies, explicitly look for agency reviews, license or permit decisions, environmental reviews, hearings, votes, approval deadlines, and project timelines.",
-    "For product-led companies, look for recurring branded events, registration pages, venue calendars, keynotes, product launch pages, and roadmap milestones.",
-    "For recently public companies, reverse mergers into listed shells, or names with heavy insider or VC holdings, look for lock-up or selling-window expirations, Rule 144 and resale registration milestones, registered directs or secondaries, and other scheduled float or insider-supply events—these are valid catalysts and often skew to the downside.",
-    "Use these query themes as hints, then reformulate searches if the company uses branded names:",
-    queryHints,
-    "Return a concise evidence digest with source titles and URLs. Include aliases or named events you discovered.",
+    "Search the web repeatedly with varied queries. Start broad (recent news, upcoming catalysts and milestones, investor updates), then run targeted follow-up searches on the specific leads you discover—named programs, products, factories or sites, regulatory processes, partners, and executive statements.",
+    "Look beyond official press releases and scheduled events: include qualitative and strategic milestones such as regional regulatory rollouts and approvals, product unveils and launches, manufacturing or capacity ramps, named internal programs, partnerships, supply or float milestones, and management targets discussed in credible reporting.",
+    "Also include scheduled events (earnings, investor days, shareholder meetings, flagship conferences), but do not let them crowd out strategic milestones.",
+    "Do not use ticker-specific event maps or preconceived event lists—derive everything from what current sources actually discuss.",
+    "Write the report as a list of distinct catalysts. For each catalyst give: a short name, expected timing (date, window, or 'timing unclear'), whether it is confirmed, likely, or speculative, what it is, why it could move the stock, and the source URLs that support it.",
+    "Cover every distinct material milestone family that credible sources discuss—do not collapse the report into one theme.",
   ]
     .filter(Boolean)
     .join("\n\n")
 }
 
-async function fetchOpenAiSearchSnippets(
+const HOSTED_SEARCH_SYSTEM_PROMPT =
+  "You are an equity research analyst. Use the web search tools repeatedly with varied queries: begin broad, then run targeted follow-up searches on specific leads you discover (named programs, products, sites, regulators, partners). Then write a thorough catalyst report that keeps concrete source URLs attached to every claim—covering all major themes you find, not only the single highest-profile story."
+
+function buildCompanyContextBlock(finnhub: {
+  companyName?: string
+  exchange?: string
+  companyWebsite?: string
+  finnhubIndustry?: string
+}): string {
+  return [
+    finnhub.companyName ? `Company name: ${finnhub.companyName}.` : null,
+    finnhub.exchange ? `Exchange: ${finnhub.exchange}.` : null,
+    finnhub.finnhubIndustry ? `Industry: ${finnhub.finnhubIndustry}.` : null,
+    finnhub.companyWebsite ? `Website: ${finnhub.companyWebsite}.` : null,
+  ]
+    .filter(Boolean)
+    .join(" ")
+}
+
+function snippetFromToolExcerpt(input: {
+  url: string
+  title: string
+  publisher: string
+  quote: string
+  publishedAt?: string
+  provenance?: SnippetProvenance
+}): SourceSnippet | null {
+  if (!compactWhitespace(input.quote)) {
+    return null
+  }
+
+  return {
+    url: input.url,
+    title: input.title,
+    publisher: input.publisher,
+    quote: clipSnippetQuote(input.quote),
+    ...(input.publishedAt ? { publishedAt: input.publishedAt } : {}),
+    provenance: input.provenance ?? "tool_excerpt",
+  }
+}
+
+function finnhubSnippet(input: Omit<SourceSnippet, "provenance">): SourceSnippet {
+  return {
+    ...input,
+    provenance: "finnhub_metadata",
+  }
+}
+
+function emptyProviderResult(
+  provider: HostedSearchProvider,
+  diagnosticBase: Omit<SearchQueryDiagnostic, "resultCount" | "keptCount" | "urls">,
+  error: string,
+): ProviderResearchResult {
+  return {
+    provider,
+    report: "",
+    snippets: [],
+    seenUrls: [],
+    diagnostics: [
+      {
+        ...diagnosticBase,
+        resultCount: 0,
+        keptCount: 0,
+        urls: [],
+        error,
+      },
+    ],
+  }
+}
+
+async function fetchOpenAiProviderResearch(
   symbol: string,
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
-  selectedPlan: SearchQuery[]
-): Promise<{
-  snippets: SourceSnippet[]
-  diagnostics: SearchQueryDiagnostic[]
-}> {
+): Promise<ProviderResearchResult> {
   const model = process.env.CATALYST_OPENAI_SEARCH_MODEL
   const exaApiKey = process.env.EXA_API_KEY
-  const prompt = buildGroundedSearchPrompt(
-    symbol,
-    companyName,
-    industry,
-    now,
-    selectedPlan
-  )
+  const prompt = buildCatalystReportPrompt(symbol, companyName, industry, now)
   const diagnosticBase = {
-    bucket: "market_news" as const,
+    bucket: "provider_report",
     query: `GPT + Exa web search: ${symbol}`,
     maxResults: 10,
   }
 
   if (!model) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error:
-            "Missing CATALYST_OPENAI_SEARCH_MODEL (GPT orchestrator for Exa web search)",
-        },
-      ],
-    }
+    return emptyProviderResult(
+      "openai",
+      diagnosticBase,
+      "Missing CATALYST_OPENAI_SEARCH_MODEL (GPT orchestrator for Exa web search)",
+    )
   }
 
   if (!exaApiKey) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error: "Missing EXA_API_KEY for Exa web search tool",
-        },
-      ],
-    }
+    return emptyProviderResult(
+      "openai",
+      diagnosticBase,
+      "Missing EXA_API_KEY for Exa web search tool",
+    )
   }
 
   try {
     const result = await generateText({
       model,
-      system:
-        "You are a research assistant. Use the webSearch tool to retrieve current web sources with concrete URLs, then write a concise evidence digest that references those sources. Prefer multiple focused searches if one query is too broad.",
+      system: HOSTED_SEARCH_SYSTEM_PROMPT,
       tools: {
         webSearch: webSearch({
           apiKey: exaApiKey,
           type: "auto",
-          numResults: 10,
+          numResults: 12,
           contents: {
             text: { maxCharacters: WEB_SNIPPET_QUOTE_LENGTH },
             livecrawl: "fallback",
@@ -918,7 +1091,7 @@ async function fetchOpenAiSearchSnippets(
       prompt,
     })
 
-    const digest = compactWhitespace(result.text)
+    const report = compactWhitespace(result.text)
     const toolOutputs: unknown[] = []
 
     for (const toolResult of iterateWebSearchToolResults(result)) {
@@ -950,7 +1123,6 @@ async function fetchOpenAiSearchSnippets(
 
     const snippets: SourceSnippet[] = []
     const urls: string[] = []
-    const urlOrder = [...sourceTitles.keys()]
 
     for (const [url, title] of sourceTitles) {
       const publisher = publisherFromUrl(url)
@@ -959,92 +1131,81 @@ async function fetchOpenAiSearchSnippets(
         continue
       }
 
-      const excerpts = citationInfo.get(url)?.excerpts
-      const quote = mergeExcerptsForQuote(excerpts, digest, url, urlOrder)
+      const excerpt = excerptOnlyQuote(
+        citationInfo.get(url)?.excerpts,
+        WEB_SNIPPET_QUOTE_LENGTH,
+      )
 
-      if (!compactWhitespace(quote)) {
+      if (!excerpt) {
+        continue
+      }
+
+      const snippet = snippetFromToolExcerpt({
+        url,
+        title: title ?? url,
+        publisher,
+        quote: excerpt,
+        provenance: "tool_excerpt",
+      })
+
+      if (!snippet) {
         continue
       }
 
       urls.push(url)
-      snippets.push({
-        url,
-        title: title ?? url,
-        publisher,
-        quote,
-      })
+      snippets.push(snippet)
     }
 
     return {
+      provider: "openai",
+      report,
       snippets,
+      seenUrls: [...sourceTitles.keys()],
       diagnostics: [
         {
           ...diagnosticBase,
           resultCount: sourceTitles.size,
           keptCount: snippets.length,
           urls: urls.slice(0, MAX_DIAGNOSTIC_URLS_PER_QUERY),
+          reportChars: report.length,
         },
       ],
     }
   } catch (err) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error: err instanceof Error ? err.message : String(err),
-        },
-      ],
-    }
+    return emptyProviderResult(
+      "openai",
+      diagnosticBase,
+      err instanceof Error ? err.message : String(err),
+    )
   }
 }
 
-async function fetchAnthropicSearchSnippets(
+async function fetchAnthropicProviderResearch(
   symbol: string,
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
-  selectedPlan: SearchQuery[]
-): Promise<{
-  snippets: SourceSnippet[]
-  diagnostics: SearchQueryDiagnostic[]
-}> {
+): Promise<ProviderResearchResult> {
   const model = process.env.CATALYST_ANTHROPIC_SEARCH_MODEL
-  const prompt = buildGroundedSearchPrompt(
-    symbol,
-    companyName,
-    industry,
-    now,
-    selectedPlan
-  )
+  const prompt = buildCatalystReportPrompt(symbol, companyName, industry, now)
   const diagnosticBase = {
-    bucket: "market_news" as const,
+    bucket: "provider_report",
     query: `Anthropic web search: ${symbol}`,
     maxResults: 10,
   }
 
   if (!model) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error:
-            "Missing CATALYST_ANTHROPIC_SEARCH_MODEL for Anthropic web search",
-        },
-      ],
-    }
+    return emptyProviderResult(
+      "anthropic",
+      diagnosticBase,
+      "Missing CATALYST_ANTHROPIC_SEARCH_MODEL for Anthropic web search",
+    )
   }
 
   try {
     const result = await generateText({
       model,
+      system: HOSTED_SEARCH_SYSTEM_PROMPT,
       tools: {
         web_search: anthropic.tools.webSearch_20250305({
           maxUses: anthropicWebSearchMaxUses(),
@@ -1053,7 +1214,7 @@ async function fetchAnthropicSearchSnippets(
       toolChoice: { type: "tool", toolName: "web_search" },
       prompt,
     })
-    const digest = compactWhitespace(result.text)
+    const report = compactWhitespace(result.text)
     const citedByUrl = collectAnthropicCitedTextByUrl(result.sources)
     const sourceTitles = new Map<string, string | undefined>()
     let resultCount = 0
@@ -1092,96 +1253,90 @@ async function fetchAnthropicSearchSnippets(
 
     const snippets: SourceSnippet[] = []
     const urls: string[] = []
-    const urlOrder = [...sourceTitles.keys()]
 
     for (const [url, title] of sourceTitles) {
       const publisher = publisherFromUrl(url)
 
-      if (!publisher || !digest) {
+      if (!publisher) {
         continue
       }
 
       const excerpts = citedByUrl.get(url)
-      const quote = mergeExcerptsForQuote(excerpts, digest, url, urlOrder)
+      const excerpt = excerptOnlyQuote(
+        excerpts ? [...excerpts] : undefined,
+        WEB_SNIPPET_QUOTE_LENGTH,
+      )
 
-      urls.push(url)
-      snippets.push({
+      if (!excerpt) {
+        continue
+      }
+
+      const snippet = snippetFromToolExcerpt({
         url,
         title: title ?? url,
         publisher,
-        quote,
+        quote: excerpt,
+        provenance: "tool_excerpt",
       })
+
+      if (!snippet) {
+        continue
+      }
+
+      urls.push(url)
+      snippets.push(snippet)
     }
 
     return {
+      provider: "anthropic",
+      report,
       snippets,
+      seenUrls: [...sourceTitles.keys()],
       diagnostics: [
         {
           ...diagnosticBase,
           resultCount: resultCount || sourceTitles.size,
           keptCount: snippets.length,
           urls: urls.slice(0, MAX_DIAGNOSTIC_URLS_PER_QUERY),
+          reportChars: report.length,
         },
       ],
     }
   } catch (err) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error: err instanceof Error ? err.message : String(err),
-        },
-      ],
-    }
+    return emptyProviderResult(
+      "anthropic",
+      diagnosticBase,
+      err instanceof Error ? err.message : String(err),
+    )
   }
 }
 
-async function fetchXaiSearchSnippets(
+async function fetchXaiProviderResearch(
   symbol: string,
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
-  selectedPlan: SearchQuery[]
-): Promise<{
-  snippets: SourceSnippet[]
-  diagnostics: SearchQueryDiagnostic[]
-}> {
+): Promise<ProviderResearchResult> {
   const model = process.env.CATALYST_XAI_SEARCH_MODEL
-  const prompt = buildGroundedSearchPrompt(
-    symbol,
-    companyName,
-    industry,
-    now,
-    selectedPlan
-  )
+  const prompt = buildCatalystReportPrompt(symbol, companyName, industry, now)
   const diagnosticBase = {
-    bucket: "market_news" as const,
+    bucket: "provider_report",
     query: `xAI Grok X search: ${symbol}`,
     maxResults: 10,
   }
 
   if (!model) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error: "Missing CATALYST_XAI_SEARCH_MODEL for xAI Grok X search",
-        },
-      ],
-    }
+    return emptyProviderResult(
+      "xai",
+      diagnosticBase,
+      "Missing CATALYST_XAI_SEARCH_MODEL for xAI Grok X search",
+    )
   }
 
   try {
     const result = await generateText({
       model,
+      system: HOSTED_SEARCH_SYSTEM_PROMPT,
       tools: {
         x_search: xai.tools.xSearch({
           enableImageUnderstanding: true,
@@ -1230,120 +1385,79 @@ async function fetchXaiSearchSnippets(
 
         seenUrls.add(url)
         urls.push(url)
-        snippets.push({
+        const snippet = snippetFromToolExcerpt({
           url,
           title: titleForXPostSnippet(url, author, sourceTitles.get(url)),
           publisher,
-          quote: clipSnippetQuote(quote),
+          quote,
+          provenance: "tool_excerpt",
         })
-      }
-    }
 
-    const digest = compactWhitespace(result.text)
-    let fallbackFromSources = 0
-
-    // Vercel AI Gateway can return x_search tool-call + `source` URL parts without
-    // normalized `tool-result` rows; reuse the model digest as the snippet quote.
-    // When multiple X URLs appear, the same digest is intentionally shared per URL.
-    if (snippets.length === 0 && digest) {
-      for (const source of result.sources) {
-        if (source.sourceType !== "url") {
+        if (!snippet) {
           continue
         }
 
-        const url = normalizeSourceUrl(source.url)
-        const publisher = publisherFromUrl(url)
-
-        if (!publisher || !isXPostPublisher(publisher) || seenUrls.has(url)) {
-          continue
-        }
-
-        seenUrls.add(url)
-        urls.push(url)
-        fallbackFromSources += 1
-        snippets.push({
-          url,
-          title: titleForXPostSnippet(url, "", source.title),
-          publisher,
-          quote: clipSnippetQuote(digest),
-        })
+        snippets.push(snippet)
       }
     }
 
-    if (resultCount === 0 && fallbackFromSources > 0) {
-      resultCount = fallbackFromSources
+    const report = compactWhitespace(result.text)
+    const allSeenUrls = new Set(seenUrls)
+
+    for (const url of sourceTitles.keys()) {
+      allSeenUrls.add(url)
     }
 
     return {
+      provider: "xai",
+      report,
       snippets,
+      seenUrls: [...allSeenUrls],
       diagnostics: [
         {
           ...diagnosticBase,
           resultCount,
           keptCount: snippets.length,
           urls: urls.slice(0, MAX_DIAGNOSTIC_URLS_PER_QUERY),
+          reportChars: report.length,
         },
       ],
     }
   } catch (err) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error: err instanceof Error ? err.message : String(err),
-        },
-      ],
-    }
+    return emptyProviderResult(
+      "xai",
+      diagnosticBase,
+      err instanceof Error ? err.message : String(err),
+    )
   }
 }
 
-async function fetchGeminiSearchSnippets(
+async function fetchGeminiProviderResearch(
   symbol: string,
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
-  selectedPlan: SearchQuery[]
-): Promise<{
-  snippets: SourceSnippet[]
-  diagnostics: SearchQueryDiagnostic[]
-}> {
+): Promise<ProviderResearchResult> {
   const model = process.env.CATALYST_GEMINI_SEARCH_MODEL
-  const prompt = buildGroundedSearchPrompt(
-    symbol,
-    companyName,
-    industry,
-    now,
-    selectedPlan
-  )
+  const prompt = buildCatalystReportPrompt(symbol, companyName, industry, now)
   const diagnosticBase = {
-    bucket: "market_news" as const,
+    bucket: "provider_report",
     query: `Gemini Google search: ${symbol}`,
     maxResults: 10,
   }
 
   if (!model) {
-    return {
-      snippets: [],
-      diagnostics: [
-        {
-          ...diagnosticBase,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error:
-            "Missing CATALYST_GEMINI_SEARCH_MODEL for Gemini Google search (AI Gateway model id, e.g. google/gemini-2.5-flash)",
-        },
-      ],
-    }
+    return emptyProviderResult(
+      "gemini",
+      diagnosticBase,
+      "Missing CATALYST_GEMINI_SEARCH_MODEL for Gemini Google search (AI Gateway model id, e.g. google/gemini-2.5-flash)",
+    )
   }
 
   try {
     const result = await generateText({
       model,
+      system: HOSTED_SEARCH_SYSTEM_PROMPT,
       tools: {
         google_search: google.tools.googleSearch({}),
       } as ToolSet,
@@ -1389,20 +1503,17 @@ async function fetchGeminiSearchSnippets(
 
     const snippets: SourceSnippet[] = []
     const urls: string[] = []
-    const urlOrder = chunks
-      .map((chunk) =>
-        chunk.web?.uri ? normalizeSourceUrl(chunk.web.uri) : null,
-      )
-      .filter((value): value is string => Boolean(value))
+    const seenUrls = new Set<string>(sourceTitles.keys())
 
     for (const [chunkIndex, chunk] of chunks.entries()) {
       const uri = chunk.web?.uri ?? undefined
 
-      if (!uri || !digest) {
+      if (!uri) {
         continue
       }
 
       const normalizedUrl = normalizeSourceUrl(uri)
+      seenUrls.add(normalizedUrl)
       const publisher = publisherFromUrl(normalizedUrl)
 
       if (!publisher) {
@@ -1423,63 +1534,29 @@ async function fetchGeminiSearchSnippets(
         continue
       }
 
-      urls.push(normalizedUrl)
-      const excerpts = quotesByChunk.get(chunkIndex)
-      const quote = mergeExcerptsForQuote(excerpts, digest, normalizedUrl, urlOrder)
+      const excerpt = excerptOnlyQuote(
+        quotesByChunk.get(chunkIndex),
+        WEB_SNIPPET_QUOTE_LENGTH,
+      )
 
-      snippets.push({
+      if (!excerpt) {
+        continue
+      }
+
+      const snippet = snippetFromToolExcerpt({
         url: normalizedUrl,
         title,
         publisher,
-        quote,
+        quote: excerpt,
+        provenance: "tool_excerpt",
       })
-    }
 
-    const urlOrderFallback = result.sources
-      .filter(
-        (
-          source,
-        ): source is typeof source & { url: string } =>
-          source.sourceType === "url" &&
-          typeof source.url === "string" &&
-          source.url.length > 0,
-      )
-      .map((source) => normalizeSourceUrl(source.url))
-
-    if (snippets.length === 0 && digest) {
-      const seenFallback = new Set(urls)
-
-      for (const source of result.sources) {
-        if (source.sourceType !== "url") {
-          continue
-        }
-
-        const normalizedUrl = normalizeSourceUrl(source.url)
-        const publisher = publisherFromUrl(normalizedUrl)
-
-        if (!publisher || seenFallback.has(normalizedUrl)) {
-          continue
-        }
-
-        seenFallback.add(normalizedUrl)
-        urls.push(normalizedUrl)
-        snippets.push({
-          url: normalizedUrl,
-          title:
-            compactWhitespace(source.title ?? "").length > 0 ?
-              compactWhitespace(source.title!)
-            : publisher,
-          publisher,
-          quote: mergeExcerptsForQuote(
-            undefined,
-            digest,
-            normalizedUrl,
-            urlOrderFallback.length > 0 ?
-              urlOrderFallback
-            : [normalizedUrl],
-          ),
-        })
+      if (!snippet) {
+        continue
       }
+
+      urls.push(normalizedUrl)
+      snippets.push(snippet)
     }
 
     const queriesLen =
@@ -1492,22 +1569,137 @@ async function fetchGeminiSearchSnippets(
       chunks.length !== 0 ? chunks.length : queriesLen || snippets.length || 0
 
     return {
+      provider: "gemini",
+      report: digest,
       snippets,
+      seenUrls: [...seenUrls],
       diagnostics: [
         {
           ...diagnosticBase,
           resultCount,
           keptCount: snippets.length,
           urls: urls.slice(0, MAX_DIAGNOSTIC_URLS_PER_QUERY),
+          reportChars: digest.length,
         },
       ],
     }
   } catch (err) {
+    return emptyProviderResult(
+      "gemini",
+      diagnosticBase,
+      err instanceof Error ? err.message : String(err),
+    )
+  }
+}
+
+async function fetchHostedProviderResearch(
+  symbol: string,
+  companyName: string | undefined,
+  industry: string | undefined,
+  now: number,
+): Promise<{
+  providers: ProviderResearchResult[]
+  seenUrls: Set<string>
+  diagnostics: SearchQueryDiagnostic[]
+}> {
+  const providers = enabledHostedSearchProviders()
+
+  if (providers.length === 0) {
+    return { providers: [], seenUrls: new Set(), diagnostics: [] }
+  }
+
+  const results = await Promise.all(
+    providers.map((provider) => {
+      switch (provider) {
+        case "gemini":
+          return fetchGeminiProviderResearch(
+            symbol,
+            companyName,
+            industry,
+            now,
+          )
+        case "openai":
+          return fetchOpenAiProviderResearch(
+            symbol,
+            companyName,
+            industry,
+            now,
+          )
+        case "anthropic":
+          return fetchAnthropicProviderResearch(
+            symbol,
+            companyName,
+            industry,
+            now,
+          )
+        case "xai":
+          return fetchXaiProviderResearch(
+            symbol,
+            companyName,
+            industry,
+            now,
+          )
+      }
+    })
+  )
+
+  const seenUrls = new Set<string>()
+
+  for (const result of results) {
+    for (const url of result.seenUrls) {
+      seenUrls.add(normalizeSourceUrl(url))
+    }
+  }
+
+  return {
+    providers: results,
+    seenUrls,
+    diagnostics: results.flatMap((result) => result.diagnostics),
+  }
+}
+
+/** Round 2: model-written follow-up queries on themes the round-1 reports surfaced, run via Exa search. */
+async function runCatalystFollowUpPass(
+  symbol: string,
+  companyName: string | undefined,
+  reports: string[],
+  now: number,
+): Promise<{
+  queries: string[]
+  snippets: SourceSnippet[]
+  diagnostics: SearchQueryDiagnostic[]
+}> {
+  const model =
+    process.env.CATALYST_FOLLOWUP_MODEL?.trim() || process.env.AI_GATEWAY_MODEL
+  const maxQueries = getFollowUpMaxQueries()
+
+  if (!model || maxQueries === 0 || reports.length === 0) {
+    return { queries: [], snippets: [], diagnostics: [] }
+  }
+
+  let queries: string[] = []
+
+  try {
+    const result = await generateText({
+      model,
+      prompt: buildFollowUpQueryPrompt(
+        symbol,
+        companyName,
+        reports,
+        maxQueries,
+        now,
+      ),
+    })
+
+    queries = parseFollowUpQueries(result.text, maxQueries)
+  } catch (err) {
     return {
+      queries: [],
       snippets: [],
       diagnostics: [
         {
-          ...diagnosticBase,
+          bucket: "follow_up",
+          query: `Follow-up query generation: ${symbol}`,
           resultCount: 0,
           keptCount: 0,
           urls: [],
@@ -1516,70 +1708,112 @@ async function fetchGeminiSearchSnippets(
       ],
     }
   }
-}
 
-async function fetchHostedSearchSnippets(
-  symbol: string,
-  companyName: string | undefined,
-  industry: string | undefined,
-  now: number,
-  selectedPlan: SearchQuery[]
-): Promise<{
-  snippets: SourceSnippet[]
-  diagnostics: SearchQueryDiagnostic[]
-}> {
-  const providers = enabledHostedSearchProviders()
-
-  if (providers.length === 0) {
-    return { snippets: [], diagnostics: [] }
+  if (queries.length === 0) {
+    return { queries: [], snippets: [], diagnostics: [] }
   }
 
-  const results = await Promise.all(
-    providers.map((provider) => {
-      switch (provider) {
-        case "gemini":
-          return fetchGeminiSearchSnippets(
-            symbol,
-            companyName,
-            industry,
-            now,
-            selectedPlan
-          )
-        case "openai":
-          return fetchOpenAiSearchSnippets(
-            symbol,
-            companyName,
-            industry,
-            now,
-            selectedPlan
-          )
-        case "anthropic":
-          return fetchAnthropicSearchSnippets(
-            symbol,
-            companyName,
-            industry,
-            now,
-            selectedPlan
-          )
-        case "xai":
-          return fetchXaiSearchSnippets(
-            symbol,
-            companyName,
-            industry,
-            now,
-            selectedPlan
-          )
-      }
-    })
-  )
+  const searched = await runFollowUpSearches(queries, clipSnippetQuote)
 
   return {
-    snippets: dedupeSnippetsByUrl(
-      results.flatMap((result) => result.snippets),
-      MAX_WEB_SNIPPETS
-    ),
-    diagnostics: results.flatMap((result) => result.diagnostics),
+    queries,
+    snippets: searched.snippets,
+    diagnostics: searched.diagnostics,
   }
+}
+
+async function enrichEvidenceWithDeepRead(
+  evidenceSnippets: SourceSnippet[],
+  urlHitCounts: Map<string, number>,
+): Promise<{
+  snippets: SourceSnippet[]
+  deepReadUrlCount: number
+  deepReadSuccessCount: number
+  deepReadError?: string
+}> {
+  const rankedUrls = rankUrlsForDeepRead(
+    evidenceSnippets,
+    urlHitCounts,
+    getDeepReadMaxUrls(),
+  )
+
+  if (rankedUrls.length === 0) {
+    return {
+      snippets: evidenceSnippets,
+      deepReadUrlCount: 0,
+      deepReadSuccessCount: 0,
+    }
+  }
+
+  const deepRead = await fetchExaPageContents(rankedUrls, clipSnippetQuote)
+
+  return {
+    snippets: mergeDeepReadSnippets(evidenceSnippets, deepRead.snippets),
+    deepReadUrlCount: deepRead.urlsAttempted,
+    deepReadSuccessCount: deepRead.urlsSucceeded,
+    deepReadError: deepRead.error,
+  }
+}
+
+function buildFinnhubBaselineEvents(
+  symbol: string,
+  snippets: SourceSnippet[],
+  calendarRows: FinnhubEarningsCalendarRow[],
+): CatalystResearch["events"] {
+  const calendarSnippet = snippets.find((snippet) =>
+    snippet.url.includes("earnings-calendar"),
+  )
+
+  if (calendarRows.length > 0 && calendarSnippet) {
+    return calendarRows.slice(0, 4).map((row) => {
+      const quarterLabel =
+        typeof row.quarter === "number" && typeof row.year === "number"
+          ? `Q${row.quarter} ${row.year}`
+          : "upcoming quarter"
+      const hourLabel = row.hour ? ` (${row.hour})` : ""
+
+      return {
+        title: `${symbol} ${quarterLabel} earnings`,
+        summary: `Finnhub earnings calendar lists ${symbol} reporting on ${row.date}${hourLabel}.`,
+        whyItMatters:
+          "Earnings can reset guidance, margins, and how the market prices the stock.",
+        eventType: "earnings" as const,
+        expectedDate: row.date,
+        datePrecision: "exact" as const,
+        confidence: 0.85,
+        status: "confirmed" as const,
+        expectedImpact: "medium" as const,
+        sources: [
+          {
+            url: calendarSnippet.url,
+            title: calendarSnippet.title,
+            publisher: calendarSnippet.publisher,
+            quote: calendarSnippet.quote,
+            supportsFields: ["eventType", "summary", "expectedDate"],
+          },
+        ],
+      }
+    })
+  }
+
+  return buildDeterministicEvents(symbol, snippets)
+}
+
+function mergeBaselineEarningsEvents(
+  events: CatalystResearch["events"],
+  baselineEvents: CatalystResearch["events"],
+): CatalystResearch["events"] {
+  if (baselineEvents.length === 0) {
+    return events
+  }
+
+  const hasEarnings = events.some((event) => event.eventType === "earnings")
+
+  if (hasEarnings) {
+    return events
+  }
+
+  return [...events, ...baselineEvents]
 }
 
 function buildDeterministicEvents(
@@ -1622,40 +1856,42 @@ function buildDeterministicEvents(
 
 async function buildAiEvents(
   symbol: string,
+  companyContext: string,
+  providerReports: Array<{ provider: string; report: string }>,
   snippets: SourceSnippet[],
-  candidates: ResearchCandidate[],
   now: number
 ): Promise<CatalystResearch | null> {
   const model = process.env.AI_GATEWAY_MODEL
 
-  if (!model || snippets.length === 0) {
+  if (!model || (snippets.length === 0 && providerReports.length === 0)) {
     return null
   }
 
+  const reportsBlock =
+    providerReports.length > 0
+      ? providerReports
+          .map(
+            (entry) =>
+              `--- Report from ${entry.provider} search agent ---\n${entry.report}`,
+          )
+          .join("\n\n")
+      : "(no provider reports available)"
+
   const prompt = [
-    `Today is ${new Date(now).toISOString().slice(0, 10)}. Extract upcoming catalyst events for ${symbol} over the next 12 months.`,
-    "Use only the source snippets below. Do not invent events.",
-    "Every event must include at least one source copied from the snippets and must be excluded if no snippet supports it.",
-    "Look beyond earnings. Prioritize material stock-moving catalysts: product launches, production ramps, regulatory approvals, market expansion, investor days, recurring branded company events, developer/customer conferences, product keynotes, corporate presentations, shareholder meetings, partnerships and strategic deals, spin-offs/M&A/corporate actions, lock-up or selling-window expirations and other float or insider-supply milestones, management guidance, capex milestones, legal decisions, contracts, clinical/data readouts, and commercialization milestones.",
-    "Treat candidate leads as routing hints, not facts. Resolve ambiguous product names to the actual company event, regulator, program, or launch milestone only when the snippets support that connection.",
-    "Scheduled insider-supply or lock-up milestones are in scope when snippets support them; whyItMatters should spell out downside or dilution risk when that is the credible read.",
-    "For regulated industries, look carefully for permit, license, agency review, environmental review, hearing, vote, and approval timelines even when the event is not marketed as a conference or launch.",
-    "Classify eventType using: earnings, product, regulatory, launch, investor_day, conference (trade shows, keynote slots, sell-side conferences, webcast-only conference tracks), partnership (JVs, OEM, major customer or collaboration deals), corporate (M&A, spin-offs, reorgs, financings, proxy votes, lock-up or selling-window expirations, Rule 144 or resale windows, registered secondaries or directs that add tradable supply), macro, legal, other.",
-    "When snippets clearly describe the same real-world occasion (same named flagship or recurring company event, same schedule or venue, same official registration or agenda page), output one merged event—not separate rows for 'the conference' versus 'expected announcements there'. Put likely product or AI reveals in summary and whyItMatters; pick the dominant eventType (often conference or investor_day for the umbrella moment).",
-    "When distinct snippets support the same business lever (pricing changes, usage or consumption billing, AI credits, seat mix, net revenue retention commentary, competitive product response) without conflicting dates or figures, you may output separate theme-style events with status 'likely' or 'speculative' and lower confidence—each row must cite different URLs and must not merge inconsistent lock-up dates, float figures, or percentages from different sources into one event.",
-    "Roadmap or target milestones are allowed when supported by company statements, filings, transcripts, regulator pages, exchange calendars, or credible reporting. Use status 'likely' or 'speculative' and lower confidence when timing is inferred from a target, cadence, or historical calendar pattern.",
-    "Do not require exact dates. Use expectedDate for exact dates, windowStart/windowEnd for month/quarter/season/year-end windows, and datePrecision to show how specific the timing is.",
+    `Today is ${new Date(now).toISOString().slice(0, 10)}. Merge the research below into structured upcoming catalyst events for ${symbol} over the next 12 months.`,
+    companyContext ? `Company context (not evidence; do not cite as a source): ${companyContext}` : "",
+    "You are given (1) catalyst research reports written by independent web-search agents and (2) evidence snippets with verbatim page excerpts. The reports carry the synthesis and timing reasoning; the snippets carry verbatim quotes. Use both.",
+    "Extract every distinct material catalyst the reports or snippets support: scheduled events (earnings, investor days, shareholder meetings, flagship and sell-side conferences) and qualitative or strategic milestones (regional regulatory rollouts and approvals, product unveils and launches, manufacturing or capacity ramps, named programs and sites, partnerships and strategic deals, lock-up or float/insider-supply milestones, management targets, legal decisions, clinical or data readouts, commercialization milestones).",
+    formatResearchBreadthExtractionBlock(),
+    "When sources describe the same dated or named real-world occasion (same flagship event, schedule, venue, or official page), output one merged event with the dominant eventType—put expected reveals in summary and whyItMatters instead of duplicate rows. Do not stitch conflicting share counts, percentages, or dates from different sources into one event; use separate rows or one lower-confidence row.",
+    "Every event must cite at least one source whose URL appears in the reports or snippets. Never invent URLs. For each source quote: copy the snippet quote verbatim when a snippet with that URL exists; otherwise quote the specific report claim that the URL supports.",
+    "Use expectedDate for exact dates, windowStart/windowEnd for month/quarter/season/year-end windows, and datePrecision to show how specific the timing is. Use status 'likely' or 'speculative' with lower confidence when timing is inferred from targets, cadence, or reporting; prefer primary company, regulator, SEC, or exchange sources over commentary.",
     "Exclude stale past events unless a source clearly supports a future recurrence or future milestone.",
-    "Return up to 20 highest-impact events, ordered chronologically when timing is known.",
-    "Prefer confirmed company, exchange, regulator, SEC, or investor relations sources over commentary.",
-    "When hosted search providers disagree, keep only events supported by concrete source snippets and prefer primary sources over provider summaries.",
-    "Use null for unknown company, exchange, publication date, or event date fields.",
-    "Copy source url, title, publisher, publishedAt, and quote from the snippets instead of paraphrasing source metadata.",
-    "summary: Factual what/when/context only, in 1–2 short sentences (or one tight sentence). Do not repeat the title, do not explain importance here, no bullet lists, no long hedging.",
-    "whyItMatters: One short sentence (two only if strictly necessary) on why the stock might move (e.g. guidance, multiple, regulatory binary, demand). Do not restate the full summary.",
-    "Candidate leads detected from the snippets:",
-    JSON.stringify(candidates, null, 2),
-    "Source snippets:",
+    "summary: 1–2 short factual sentences (what/when/context); do not repeat the title or argue importance. whyItMatters: one short sentence on why the stock might move (guidance, multiple, regulatory binary, demand, dilution risk).",
+    "Use null for unknown company, exchange, publication date, or event date fields. Return up to 20 events, ordered chronologically when timing is known.",
+    "Research reports:",
+    reportsBlock,
+    "Evidence snippets:",
     JSON.stringify(snippets, null, 2),
   ].join("\n\n")
 
@@ -1764,54 +2000,107 @@ export const runResearch = internalAction({
     })
 
     try {
-      const tickerValidation = await validateTicker(ctx, run.symbol, Date.now())
+      warnHostedSearchAndGatewayEnvGaps()
+
+      const researchStartedAt = Date.now()
+      const tickerValidation = await validateTicker(ctx, run.symbol, researchStartedAt)
       assertTickerExists(tickerValidation)
 
-      const finnhub = await fetchFinnhubMarketContext(run.symbol)
-      const researchStartedAt = Date.now()
+      const finnhub = await fetchFinnhubMarketContext(run.symbol, researchStartedAt)
       const companyNameForSearch =
         finnhub.companyName ?? tickerValidation.companyName
-      const webSearchPlan = buildSearchQueries(
-        run.symbol,
-        companyNameForSearch,
-        finnhub.companyWebsite,
-        researchStartedAt,
-        finnhub.finnhubIndustry
-      )
-      const selectedWebSearchPlan = selectBalancedSearchPlan(
-        webSearchPlan,
-        webSearchPlan.length
-      )
 
-      const hostedResearch = await fetchHostedSearchSnippets(
+      const companyContext = buildCompanyContextBlock(finnhub)
+      const hostedResearch = await fetchHostedProviderResearch(
         run.symbol,
         companyNameForSearch,
         finnhub.finnhubIndustry,
         researchStartedAt,
-        selectedWebSearchPlan
       )
-      const snippets = [...finnhub.snippets, ...hostedResearch.snippets]
-      const candidates = buildResearchCandidates(snippets)
+      const providerReports = hostedResearch.providers
+        .filter((provider) => provider.report.length > 0)
+        .map((provider) => ({
+          provider: provider.provider,
+          report: provider.report,
+        }))
+
+      const followUp = await runCatalystFollowUpPass(
+        run.symbol,
+        companyNameForSearch,
+        providerReports.map((entry) => entry.report),
+        researchStartedAt,
+      )
+
+      const merged = dedupeSnippetsByUrl(
+        [
+          ...hostedResearch.providers.flatMap((provider) => provider.snippets),
+          ...followUp.snippets,
+        ],
+        MAX_WEB_SNIPPETS,
+      )
+      let evidenceSnippets = [...merged.snippets, ...finnhub.snippets]
+
+      const seenUrls = new Set(hostedResearch.seenUrls)
+
+      for (const snippet of followUp.snippets) {
+        seenUrls.add(normalizeSourceUrl(snippet.url))
+      }
+
+      const deepRead = await enrichEvidenceWithDeepRead(
+        evidenceSnippets,
+        merged.urlHitCounts,
+      )
+      evidenceSnippets = deepRead.snippets
+
       const aiResearch = await buildAiEvents(
         run.symbol,
-        snippets,
-        candidates,
+        companyContext,
+        providerReports,
+        evidenceSnippets,
         researchStartedAt
       )
-      const events =
-        aiResearch?.events ?? buildDeterministicEvents(run.symbol, snippets)
+
+      let rawEvents = aiResearch?.events ?? []
+
+      if (rawEvents.length === 0) {
+        rawEvents = buildDeterministicEvents(run.symbol, evidenceSnippets)
+      }
+
+      rawEvents = mergeBaselineEarningsEvents(rawEvents, finnhub.baselineEvents)
+      const verified = verifyAndFilterEvents(
+        rawEvents,
+        evidenceSnippets,
+        seenUrls,
+      )
+      const events = verified.events
+
+      if (verified.droppedCount > 0) {
+        console.warn(
+          `[stonkseer-research] Citation verify dropped ${verified.droppedCount} event(s) for ${run.symbol}: ${verified.dropReasons.join("; ")}`,
+        )
+      }
+
+      if (deepRead.deepReadError) {
+        console.warn(
+          `[stonkseer-research] Exa deep-read for ${run.symbol}: ${deepRead.deepReadError}`,
+        )
+      }
 
       await ctx.runMutation(
         internal.researchInternal.recordResearchDiagnostics,
         {
           runId: args.runId,
           symbol: run.symbol,
-          searchQueryCount: selectedWebSearchPlan.length,
-          snippetCount: snippets.length,
-          candidateCount: candidates.length,
+          searchQueryCount:
+            hostedResearch.providers.length + followUp.queries.length,
+          snippetCount: evidenceSnippets.length,
           extractionEventCount: events.length,
-          queries: hostedResearch.diagnostics,
-          candidates,
+          deepReadUrlCount: deepRead.deepReadUrlCount,
+          deepReadSuccessCount: deepRead.deepReadSuccessCount,
+          citationDroppedCount: verified.droppedCount,
+          followUpQueryCount: followUp.queries.length,
+          reportDerivedSourceCount: verified.reportDerivedSourceCount,
+          queries: [...hostedResearch.diagnostics, ...followUp.diagnostics],
         }
       )
 

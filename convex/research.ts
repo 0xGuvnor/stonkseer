@@ -66,6 +66,7 @@ const sourceReturn = v.object({
   accessedAt: v.number(),
   quote: v.string(),
   supportsFields: v.array(v.string()),
+  provenance: v.optional(v.string()),
 })
 
 const eventWithSourcesReturn = v.object({

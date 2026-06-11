@@ -16,6 +16,7 @@ const sourceInput = v.object({
   publishedAt: v.optional(v.string()),
   quote: v.string(),
   supportsFields: v.array(v.string()),
+  provenance: v.optional(v.string()),
 })
 
 const eventInput = v.object({
@@ -42,14 +43,7 @@ const searchDiagnosticInput = v.object({
   keptCount: v.number(),
   urls: v.array(v.string()),
   error: v.optional(v.string()),
-})
-
-const candidateDiagnosticInput = v.object({
-  label: v.string(),
-  category: v.string(),
-  score: v.number(),
-  reason: v.string(),
-  sourceUrls: v.array(v.string()),
+  reportChars: v.optional(v.number()),
 })
 
 export const getRun = internalQuery({
@@ -100,10 +94,13 @@ export const recordResearchDiagnostics = internalMutation({
     symbol: v.string(),
     searchQueryCount: v.number(),
     snippetCount: v.number(),
-    candidateCount: v.number(),
     extractionEventCount: v.number(),
+    deepReadUrlCount: v.optional(v.number()),
+    deepReadSuccessCount: v.optional(v.number()),
+    citationDroppedCount: v.optional(v.number()),
+    followUpQueryCount: v.optional(v.number()),
+    reportDerivedSourceCount: v.optional(v.number()),
     queries: v.array(searchDiagnosticInput),
-    candidates: v.array(candidateDiagnosticInput),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -113,10 +110,13 @@ export const recordResearchDiagnostics = internalMutation({
       strategyVersion: RESEARCH_STRATEGY_VERSION,
       searchQueryCount: args.searchQueryCount,
       snippetCount: args.snippetCount,
-      candidateCount: args.candidateCount,
       extractionEventCount: args.extractionEventCount,
+      deepReadUrlCount: args.deepReadUrlCount,
+      deepReadSuccessCount: args.deepReadSuccessCount,
+      citationDroppedCount: args.citationDroppedCount,
+      followUpQueryCount: args.followUpQueryCount,
+      reportDerivedSourceCount: args.reportDerivedSourceCount,
       queries: args.queries,
-      candidates: args.candidates,
       createdAt: Date.now(),
     })
 
@@ -237,6 +237,7 @@ export const upsertResearchResults = internalMutation({
           accessedAt: now,
           quote: source.quote,
           supportsFields: source.supportsFields,
+          provenance: source.provenance,
         })
       }
 
