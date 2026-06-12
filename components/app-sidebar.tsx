@@ -49,27 +49,29 @@ export function AppSidebar() {
       {/* ── Header ─────────────────────────────────────────── */}
       <SidebarHeader className={cn(isIconMode ? "px-1 py-3" : "px-2 py-4")}>
         {isIconMode ? (
-          // Collapsed desktop: logo centred, trigger overlaid and revealed on hover
+          // Collapsed desktop: logo by default, expand icon on hover (no overlap)
           <div className="group/logozone relative flex items-center justify-center">
-            <Image
-              src="/logo-light.png"
-              alt=""
-              aria-hidden
-              width={40}
-              height={40}
-              className="size-10 shrink-0 dark:hidden"
-            />
-            <Image
-              src="/logo-dark.png"
-              alt=""
-              aria-hidden
-              width={40}
-              height={40}
-              className="hidden size-10 shrink-0 dark:block"
-            />
+            <span className="transition-opacity duration-150 group-hover/logozone:opacity-0">
+              <Image
+                src="/logo-light.png"
+                alt=""
+                aria-hidden
+                width={40}
+                height={40}
+                className="size-10 shrink-0 dark:hidden"
+              />
+              <Image
+                src="/logo-dark.png"
+                alt=""
+                aria-hidden
+                width={40}
+                height={40}
+                className="hidden size-10 shrink-0 dark:block"
+              />
+            </span>
             <SidebarTrigger
               aria-label="Expand sidebar"
-              className="absolute inset-0 size-full rounded-xl bg-sidebar opacity-0 transition-opacity duration-150 group-hover/logozone:opacity-100 hover:bg-sidebar-accent"
+              className="absolute inset-0 size-full rounded-xl bg-sidebar opacity-0 pointer-events-none transition-opacity duration-150 group-hover/logozone:pointer-events-auto group-hover/logozone:opacity-100 hover:bg-sidebar-accent"
             />
           </div>
         ) : (
