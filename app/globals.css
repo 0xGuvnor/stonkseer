@@ -143,6 +143,12 @@
   html {
     @apply font-sans;
     }
+  /* The app shell scrolls internally (MainScrollPane); the document itself
+     never scrolls, so kill the viewport rubber-band bounce on overscroll. */
+  html,
+  body {
+    overscroll-behavior-y: none;
+    }
 }
 
 @layer components {
