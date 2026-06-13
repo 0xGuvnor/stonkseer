@@ -92,6 +92,7 @@ export default defineSchema({
     stockId: v.optional(v.id("stocks")),
     symbol: v.string(),
     status: v.union(v.literal("active"), v.literal("archived")),
+    lastPortfolioRefreshAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

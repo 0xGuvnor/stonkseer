@@ -8,6 +8,7 @@ import {
   expectedImpactValidator,
 } from "./schema"
 import { RESEARCH_STRATEGY_VERSION } from "../lib/research-strategy"
+import { isPortfolioStockDueForRefresh } from "../lib/portfolio-refresh"
 
 const sourceInput = v.object({
   url: v.string(),
@@ -262,24 +263,25 @@ export const queueTrackedRefreshes = internalMutation({
   },
   returns: v.array(v.id("researchRuns")),
   handler: async (ctx, args) => {
-    const staleBefore = args.now - 7 * 24 * 60 * 60 * 1000
     const trackedStocks = await ctx.db.query("portfolioStocks").collect()
     const queuedRunIds = []
     const queuedSymbols = new Set<string>()
 
     for (const trackedStock of trackedStocks) {
-      if (trackedStock.status !== "active" || queuedSymbols.has(trackedStock.symbol)) {
+      if (trackedStock.status !== "active") {
         continue
       }
 
-      const stock = trackedStock.stockId
-        ? await ctx.db.get(trackedStock.stockId)
-        : await ctx.db
-            .query("stocks")
-            .withIndex("by_symbol", (q) => q.eq("symbol", trackedStock.symbol))
-            .unique()
+      if (
+        !isPortfolioStockDueForRefresh(
+          trackedStock.lastPortfolioRefreshAt,
+          args.now,
+        )
+      ) {
+        continue
+      }
 
-      if (stock?.lastRefreshedAt && stock.lastRefreshedAt > staleBefore) {
+      if (queuedSymbols.has(trackedStock.symbol)) {
         continue
       }
 
@@ -287,7 +289,7 @@ export const queueTrackedRefreshes = internalMutation({
         source: "refresh",
         symbol: trackedStock.symbol,
         status: "queued",
-      researchStrategyVersion: RESEARCH_STRATEGY_VERSION,
+        researchStrategyVersion: RESEARCH_STRATEGY_VERSION,
         attemptCount: 0,
         cacheHit: false,
         startedAt: args.now,
@@ -300,5 +302,76 @@ export const queueTrackedRefreshes = internalMutation({
     }
 
     return queuedRunIds
+  },
+})
+
+export const syncPortfolioAfterRefresh = internalMutation({
+  args: {
+    runId: v.id("researchRuns"),
+    symbol: v.string(),
+    now: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const refreshEvents = await ctx.db
+      .query("catalystEvents")
+      .withIndex("by_sourceRun", (q) => q.eq("sourceRunId", args.runId))
+      .collect()
+
+    if (refreshEvents.length === 0) {
+      return null
+    }
+
+    const portfolioStocks = await ctx.db
+      .query("portfolioStocks")
+      .withIndex("by_symbol", (q) => q.eq("symbol", args.symbol))
+      .collect()
+
+    for (const portfolioStock of portfolioStocks) {
+      if (portfolioStock.status !== "active") {
+        continue
+      }
+
+      if (
+        !isPortfolioStockDueForRefresh(
+          portfolioStock.lastPortfolioRefreshAt,
+          args.now,
+        )
+      ) {
+        continue
+      }
+
+      const trackedEvents = await ctx.db
+        .query("trackedEvents")
+        .withIndex("by_portfolio", (q) =>
+          q.eq("portfolioId", portfolioStock.portfolioId),
+        )
+        .collect()
+      const stockTrackedEvents = trackedEvents.filter(
+        (trackedEvent) => trackedEvent.portfolioStockId === portfolioStock._id,
+      )
+
+      for (const trackedEvent of stockTrackedEvents) {
+        await ctx.db.delete(trackedEvent._id)
+      }
+
+      for (const event of refreshEvents) {
+        await ctx.db.insert("trackedEvents", {
+          userId: portfolioStock.userId,
+          portfolioId: portfolioStock.portfolioId,
+          portfolioStockId: portfolioStock._id,
+          eventId: event._id,
+          notificationPreference: "none",
+          createdAt: args.now,
+        })
+      }
+
+      await ctx.db.patch(portfolioStock._id, {
+        lastPortfolioRefreshAt: args.now,
+        updatedAt: args.now,
+      })
+    }
+
+    return null
   },
 })

@@ -91,6 +91,7 @@ export const getWithStocks = query({
         stockId: v.optional(v.id("stocks")),
         symbol: v.string(),
         status: v.union(v.literal("active"), v.literal("archived")),
+        lastPortfolioRefreshAt: v.optional(v.number()),
         createdAt: v.number(),
         updatedAt: v.number(),
       }),
@@ -164,6 +165,7 @@ export const saveResearchToPortfolio = mutation({
       await ctx.db.patch(portfolioStock._id, {
         stockId: stock._id,
         status: "active",
+        lastPortfolioRefreshAt: now,
         updatedAt: now,
       })
     } else {
@@ -173,6 +175,7 @@ export const saveResearchToPortfolio = mutation({
         stockId: stock._id,
         symbol,
         status: "active",
+        lastPortfolioRefreshAt: now,
         createdAt: now,
         updatedAt: now,
       })
