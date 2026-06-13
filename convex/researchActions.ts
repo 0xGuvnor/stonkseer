@@ -4,7 +4,13 @@ import { webSearch } from "@exalabs/ai-sdk"
 import { anthropic } from "@ai-sdk/anthropic"
 import { google, type GoogleGenerativeAIProviderMetadata } from "@ai-sdk/google"
 import { xai } from "@ai-sdk/xai"
-import { generateText, Output, stepCountIs, type ToolSet } from "ai"
+import {
+  generateText,
+  NoObjectGeneratedError,
+  Output,
+  stepCountIs,
+  type ToolSet,
+} from "ai"
 import { z } from "zod"
 
 import { internal } from "./_generated/api"
@@ -1859,6 +1865,50 @@ function buildDeterministicEvents(
   ]
 }
 
+function summarizeExtractionSchemaFailure(error: unknown): {
+  message: string
+  zodIssues: Array<{ path: string; code: string; message: string }>
+  rawTextLength: number | null
+} {
+  const zodIssues: Array<{ path: string; code: string; message: string }> = []
+  let rawTextLength: number | null = null
+
+  if (NoObjectGeneratedError.isInstance(error)) {
+    rawTextLength = error.text?.length ?? null
+
+    let cause: unknown = error.cause
+    while (cause instanceof Error) {
+      if ("issues" in cause && Array.isArray((cause as z.ZodError).issues)) {
+        for (const issue of (cause as z.ZodError).issues.slice(0, 12)) {
+          zodIssues.push({
+            path: issue.path.map(String).join(".") || "(root)",
+            code: issue.code,
+            message: issue.message,
+          })
+        }
+        break
+      }
+      cause = cause.cause
+    }
+  }
+
+  const issueSummary =
+    zodIssues.length > 0
+      ? ` Schema issues: ${zodIssues
+          .map((issue) => `${issue.path} (${issue.code}): ${issue.message}`)
+          .join("; ")}`
+      : ""
+
+  const baseMessage =
+    error instanceof Error ? error.message : "Unknown extraction error"
+
+  return {
+    message: `${baseMessage}${issueSummary}`,
+    zodIssues,
+    rawTextLength,
+  }
+}
+
 async function buildAiEvents(
   symbol: string,
   companyContext: string,
@@ -1891,7 +1941,7 @@ async function buildAiEvents(
     "When sources describe the same dated or named real-world occasion (same flagship event, schedule, venue, or official page), output one merged event with the dominant eventType—put expected reveals in summary and whyItMatters instead of duplicate rows. Do not stitch conflicting share counts, percentages, or dates from different sources into one event; use separate rows or one lower-confidence row.",
     "Every event must cite at least one source whose URL appears in the reports or snippets. Never invent URLs. For each source quote: copy the snippet quote verbatim when a snippet with that URL exists; otherwise quote the specific report claim that the URL supports.",
     "Use timingShape on every event: point for exact dates; closed_window only when both start and end are source-backed; from when the catalyst has not started yet and begins after windowStart; by for deadlines; period with periodKey (YYYY, YYYY-Qn, YYYY-Hn, YYYY-MM) for fuzzy quarters/months/years; open for milestones already underway or open-ended without a stated end (may use past windowStart or periodKey when sources cite when they began); unknown when timing is unclear.",
-    "Use expectedDate for timingShape point, windowStart/windowEnd for from/by/closed_window, and periodKey for period/open. Use datePrecision to show how specific the timing is. Never set windowEnd to the 12-month research cutoff or windowStart to today's date unless a source explicitly anchors timing to today — those are research scope, not event properties.",
+    'Use expectedDate for timingShape point, windowStart/windowEnd for from/by/closed_window, and periodKey for period/open. datePrecision must be exactly one of: exact, month, quarter, half, unknown — never year, day, or other labels. Never set windowEnd to the 12-month research cutoff or windowStart to today\'s date unless a source explicitly anchors timing to today — those are research scope, not event properties.',
     "Use status 'likely' or 'speculative' with lower confidence when timing is inferred from targets, cadence, or reporting; prefer primary company, regulator, SEC, or exchange sources over commentary.",
     "Exclude stale past events unless a source clearly supports a future recurrence or future milestone.",
     "summary: 1–2 short factual sentences (what/when/context); do not repeat the title or argue importance. whyItMatters: one short sentence on why the stock might move (guidance, multiple, regulatory binary, demand, dilution risk).",
@@ -1902,15 +1952,23 @@ async function buildAiEvents(
     JSON.stringify(snippets, null, 2),
   ].join("\n\n")
 
-  const { output } = await generateText({
-    model,
-    output: Output.object({
-      schema: catalystResearchAiSchema,
-    }),
-    prompt,
-  })
+  try {
+    const { output } = await generateText({
+      model,
+      output: Output.object({
+        schema: catalystResearchAiSchema,
+      }),
+      prompt,
+    })
 
-  return normalizeCatalystResearchAi(output, now)
+    return normalizeCatalystResearchAi(output, now)
+  } catch (error) {
+    const failure = summarizeExtractionSchemaFailure(error)
+
+    throw new Error(failure.message, {
+      cause: error instanceof Error ? error : undefined,
+    })
+  }
 }
 
 function getMissingBroadResearchConfig() {

@@ -20,6 +20,72 @@ const timingShapeSchema = z.enum([
   "unknown",
 ])
 
+export const DATE_PRECISION_VALUES = [
+  "exact",
+  "month",
+  "quarter",
+  "half",
+  "unknown",
+] as const
+
+export type DatePrecision = (typeof DATE_PRECISION_VALUES)[number]
+
+const datePrecisionSchema = z.enum(DATE_PRECISION_VALUES)
+
+/** Maps model synonyms (e.g. "year") onto the supported datePrecision enum. */
+export function normalizeDatePrecision(value: unknown): DatePrecision {
+  if (typeof value !== "string") {
+    return "unknown"
+  }
+
+  const normalized = value.trim().toLowerCase()
+
+  if ((DATE_PRECISION_VALUES as readonly string[]).includes(normalized)) {
+    return normalized as DatePrecision
+  }
+
+  switch (normalized) {
+    case "day":
+    case "days":
+    case "date":
+    case "week":
+    case "weekly":
+      return "exact"
+    case "monthly":
+      return "month"
+    case "quarterly":
+    case "q1":
+    case "q2":
+    case "q3":
+    case "q4":
+      return "quarter"
+    case "semester":
+    case "semi-annual":
+    case "semiannual":
+      return "half"
+    case "year":
+    case "yearly":
+    case "annual":
+      return "unknown"
+    default:
+      if (normalized.includes("quarter")) {
+        return "quarter"
+      }
+      if (normalized.includes("month")) {
+        return "month"
+      }
+      if (normalized.includes("half")) {
+        return "half"
+      }
+      return "unknown"
+  }
+}
+
+const datePrecisionAiSchema = z.preprocess(
+  normalizeDatePrecision,
+  datePrecisionSchema,
+)
+
 function clampResearchText(value: string, maxLen: number): string {
   const t = value.trim()
 
@@ -82,7 +148,7 @@ export const catalystEventSchema = z.object({
   windowStart: z.string().optional(),
   windowEnd: z.string().optional(),
   periodKey: z.string().optional(),
-  datePrecision: z.enum(["exact", "month", "quarter", "half", "unknown"]),
+  datePrecision: datePrecisionSchema,
   confidence: z.number().min(0).max(1),
   status: z.enum(["confirmed", "likely", "speculative"]),
   expectedImpact: z.enum(["low", "medium", "high"]),
@@ -169,7 +235,9 @@ export const catalystEventAiSchema = z.object({
     .describe(
       "Fuzzy period YYYY, YYYY-Qn, YYYY-Hn, or YYYY-MM when timingShape is period or open, otherwise null",
     ),
-  datePrecision: z.enum(["exact", "month", "quarter", "half", "unknown"]),
+  datePrecision: datePrecisionAiSchema.describe(
+    'Must be exactly one of: "exact", "month", "quarter", "half", "unknown". Do not use "year", "day", or other labels.',
+  ),
   confidence: z.number().min(0).max(1),
   status: z.enum(["confirmed", "likely", "speculative"]),
   expectedImpact: z.enum(["low", "medium", "high"]),
