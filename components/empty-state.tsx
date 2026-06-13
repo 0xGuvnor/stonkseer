@@ -2,6 +2,7 @@ import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { MOBILE_CENTER_PAGE_SHELL } from "@/lib/research-route-layout"
 import { cn } from "@/lib/utils"
 
 export type EmptyStateProps = {
@@ -24,7 +25,8 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-md flex-col items-center justify-center px-5 text-center md:min-h-full",
+        MOBILE_CENTER_PAGE_SHELL,
+        "w-full max-w-md",
         className
       )}
     >

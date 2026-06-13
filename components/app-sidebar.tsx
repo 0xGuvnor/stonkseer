@@ -3,9 +3,10 @@
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Briefcase, Calendar, LogIn, Search } from "lucide-react"
+import { LogIn } from "lucide-react"
 import { Show, SignInButton, UserButton, useUser } from "@clerk/nextjs"
 
+import { APP_NAV, isTickerResearchPath } from "@/lib/app-navigation"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
 import {
@@ -23,12 +24,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 
-const NAV = [
-  { href: "/", label: "Search", icon: Search },
-  { href: "/portfolios", label: "Portfolios", icon: Briefcase },
-  { href: "/calendar", label: "Calendar", icon: Calendar },
-] as const
-
 const NAV_ITEM_CLASSES = cn(
   "relative rounded-xl transition-colors",
   "data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground",
@@ -38,11 +33,14 @@ const NAV_ITEM_CLASSES = cn(
 export function AppSidebar() {
   const pathname = usePathname()
   const { user } = useUser()
-  const { state, isMobile } = useSidebar()
+  const { state, isMobile, setOpenMobile } = useSidebar()
   const displayName =
     user?.fullName ?? user?.firstName ?? user?.username ?? "Account"
   // Icon mode = collapsed desktop (not the mobile Sheet state)
   const isIconMode = state === "collapsed" && !isMobile
+  function closeMobileSidebar() {
+    if (isMobile) setOpenMobile(false)
+  }
 
   return (
     <Sidebar collapsible="icon" variant="inset">
@@ -79,6 +77,7 @@ export function AppSidebar() {
           <div className="flex w-full items-center justify-between gap-2">
             <Link
               href="/"
+              onClick={closeMobileSidebar}
               className="flex min-w-0 items-center gap-2.5 rounded-xl px-1 ring-sidebar-ring transition-opacity outline-none hover:opacity-90 focus-visible:ring-2"
             >
               <Image
@@ -112,16 +111,10 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="gap-1.5">
-              {NAV.map(({ href, label, icon: Icon }) => {
-                const isTickerResearchPath =
-                  pathname.length > 1 &&
-                  pathname !== "/portfolios" &&
-                  !pathname.startsWith("/portfolios/") &&
-                  pathname !== "/calendar" &&
-                  !pathname.startsWith("/calendar/")
+              {APP_NAV.map(({ href, label, icon: Icon }) => {
                 const isActive =
                   href === "/"
-                    ? pathname === "/" || isTickerResearchPath
+                    ? pathname === "/" || isTickerResearchPath(pathname)
                     : pathname === href || pathname.startsWith(`${href}/`)
 
                 return (
@@ -132,7 +125,7 @@ export function AppSidebar() {
                       tooltip={label}
                       className={NAV_ITEM_CLASSES}
                     >
-                      <Link href={href}>
+                      <Link href={href} onClick={closeMobileSidebar}>
                         <Icon />
                         <span>{label}</span>
                       </Link>

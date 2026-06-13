@@ -8,18 +8,12 @@ import {
 } from "convex/react"
 import Link from "next/link"
 import { useState } from "react"
-import { Loader2 } from "lucide-react"
+import { Loader2, Sparkles } from "lucide-react"
+import { toast } from "sonner"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -29,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -39,6 +34,8 @@ import {
 } from "@/components/ui/table"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { formatIssuerHeading } from "@/lib/ticker-display"
+import { cn } from "@/lib/utils"
 import { RESEARCH_ROUTE_CENTER_SHELL } from "@/lib/research-route-layout"
 import {
   eventTimingLabel,
@@ -47,9 +44,12 @@ import {
   quarterKeyFromDate,
   sortCatalystEventsByAnchor,
 } from "@/lib/research-results-utils"
+import { ResearchNotifyToggle } from "@/components/research/research-notify-toggle"
 import type { PortfolioView } from "@/types/research-ui"
 
 const NEW_PORTFOLIO_VALUE = "__new__"
+
+const RESULTS_SHELL = "mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8"
 
 export type ResearchRunResultsProps = {
   tickerSymbol: string
@@ -57,19 +57,107 @@ export type ResearchRunResultsProps = {
   anonymousTokenHash?: string
 }
 
-function LoadingState({ label }: { label: string }) {
+function StatusBadge({
+  status,
+  cacheHit,
+}: {
+  status: string
+  cacheHit?: boolean
+}) {
+  const isLive = status === "queued" || status === "running"
+  const isDone = status === "completed"
+  const isError = status === "failed" || status === "error"
+
   return (
-    <div className="flex flex-col items-center gap-6 py-4">
-      <Loader2
-        className="size-12 animate-spin text-primary"
-        aria-hidden
-      />
-      <div className="space-y-2 text-center">
-        <p className="font-medium">{label}</p>
-        <p className="max-w-md text-sm text-muted-foreground">
-          This usually takes a moment while we gather catalysts from market and
-          web sources.
-        </p>
+    <span className="flex flex-wrap items-center gap-1.5">
+      <Badge
+        variant={isError ? "destructive" : isDone ? "default" : "secondary"}
+        className={cn("capitalize", isDone && "bg-gradient-brand border-0")}
+      >
+        {isLive ? (
+          <span className="relative flex size-1.5">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-70" />
+            <span className="relative inline-flex size-1.5 rounded-full bg-current" />
+          </span>
+        ) : null}
+        {status}
+      </Badge>
+      {cacheHit ? (
+        <Badge variant="outline" className="font-normal text-muted-foreground">
+          Cached
+        </Badge>
+      ) : null}
+    </span>
+  )
+}
+
+function ResearchRunHeading({
+  symbol,
+  companyName,
+  suffix,
+}: {
+  symbol: string
+  companyName?: string
+  suffix: string
+}) {
+  return (
+    <>
+      {formatIssuerHeading(symbol, companyName)}{" "}
+      <span className="text-muted-foreground">{suffix}</span>
+    </>
+  )
+}
+
+function ResultsSkeleton({
+  symbol,
+  companyName,
+  runId,
+  anonymousTokenHash,
+}: {
+  symbol: string
+  companyName?: string
+  runId: Id<"researchRuns">
+  anonymousTokenHash?: string
+}) {
+  return (
+    <div className={RESULTS_SHELL}>
+      <div className="glass rounded-2xl p-5 ring-1 ring-border/60 sm:p-6">
+        <div className="flex items-center gap-3">
+          <Sparkles className="size-5 shrink-0 text-primary" aria-hidden />
+          <div className="space-y-2">
+            <p className="text-lg font-semibold tracking-tight">
+              <ResearchRunHeading
+                symbol={symbol}
+                companyName={companyName}
+                suffix="catalyst research"
+              />
+            </p>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              Gathering catalysts from market and web sources…
+            </div>
+          </div>
+        </div>
+
+        <ResearchNotifyToggle
+          runId={runId}
+          symbol={symbol}
+          anonymousTokenHash={anonymousTokenHash}
+        />
+
+        <div className="mt-6 space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-4 rounded-xl border border-border/40 p-3"
+            >
+              <Skeleton className="h-4 w-14 shrink-0" />
+              <Skeleton className="h-4 w-24 shrink-0" />
+              <Skeleton className="h-4 flex-1" />
+              <Skeleton className="hidden h-4 w-40 sm:block" />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -82,7 +170,7 @@ export function ResearchRunResults({
 }: ResearchRunResultsProps) {
   const [portfolioName, setPortfolioName] = useState("My Portfolio")
   const [portfolioSelection, setPortfolioSelection] = useState<string>("")
-  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   const { isLoaded: clerkLoaded, isSignedIn } = useAuth()
   const { isAuthenticated } = useConvexAuth()
@@ -124,7 +212,7 @@ export function ResearchRunResults({
 
   async function handleSave() {
     if (!isAuthenticated || !me) {
-      setSaveMessage(
+      toast.error(
         clerkLoaded && isSignedIn
           ? "Connecting your account—try again in a moment."
           : "Sign in with Google to save this ticker to a portfolio."
@@ -133,30 +221,41 @@ export function ResearchRunResults({
     }
 
     if (!results || results.events.length === 0) {
-      setSaveMessage("No catalyst events to save for this run.")
+      toast.error("No catalyst events to save for this run.")
       return
     }
 
     const eventIds = sortedCatalystEvents.map((event) => event._id)
 
-    setSaveMessage(null)
-    const selectedPortfolioValue =
-      portfolioSelection || portfolios?.[0]?._id || NEW_PORTFOLIO_VALUE
-    const portfolioId =
-      selectedPortfolioValue !== NEW_PORTFOLIO_VALUE
-        ? (selectedPortfolioValue as Id<"portfolios">)
-        : await createPortfolio({
-            name: portfolioName,
-          })
+    setIsSaving(true)
+    try {
+      const selectedPortfolioValue =
+        portfolioSelection || portfolios?.[0]?._id || NEW_PORTFOLIO_VALUE
+      const portfolioId =
+        selectedPortfolioValue !== NEW_PORTFOLIO_VALUE
+          ? (selectedPortfolioValue as Id<"portfolios">)
+          : await createPortfolio({
+              name: portfolioName,
+            })
 
-    await saveResearchToPortfolio({
-      portfolioId,
-      symbol: results.run.symbol,
-      eventIds,
-    })
-    setSaveMessage(
-      `Saved ${results.run.symbol} (${eventIds.length} catalyst${eventIds.length === 1 ? "" : "s"}) to your portfolio.`
-    )
+      await saveResearchToPortfolio({
+        portfolioId,
+        symbol: results.run.symbol,
+        eventIds,
+      })
+      toast.success(
+        `Saved ${results.run.symbol} to your portfolio`,
+        {
+          description: `${eventIds.length} catalyst${eventIds.length === 1 ? "" : "s"} added.`,
+        }
+      )
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not save to portfolio."
+      )
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   if (!shouldLoadResults) {
@@ -195,73 +294,69 @@ export function ResearchRunResults({
 
   if (querying || runningOrQueued) {
     return (
-      <section className={RESEARCH_ROUTE_CENTER_SHELL}>
-        <Card className="w-full shadow-sm">
-          <CardHeader className="items-center space-y-1 text-center sm:items-center">
-            <CardTitle className="text-xl font-semibold">
-              {tickerSymbol} catalyst research
-            </CardTitle>
-            <CardDescription>
-              {runningOrQueued
-                ? `Status: ${results.run.status}`
-                : "Loading…"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <LoadingState
-              label={
-                runningOrQueued
-                  ? `Research in progress (${results!.run.status})`
-                  : "Loading results"
-              }
-            />
-          </CardContent>
-        </Card>
-      </section>
+      <ResultsSkeleton
+        symbol={results?.run.symbol ?? tickerSymbol}
+        companyName={results?.companyName}
+        runId={runId}
+        anonymousTokenHash={anonymousTokenHash}
+      />
     )
   }
 
+  const isCompletedWithEvents =
+    results.run.status === "completed" && results.events.length > 0
+
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 py-8">
-      <Card className="shadow-sm">
-        <CardHeader>
-          <div>
-            <CardTitle className="text-xl font-semibold">
-              {results.run.symbol} catalyst research
-            </CardTitle>
-            <CardDescription>
-              Status: {results.run.status}
-              {results.run.cacheHit ? " (cached)" : ""}
-            </CardDescription>
-          </div>
-          {results.run.status === "completed" && results.events.length > 0 ? (
-            <CardAction>
-              <Button onClick={handleSave}>Save to portfolio</Button>
-            </CardAction>
-          ) : null}
-        </CardHeader>
+    <div className={RESULTS_SHELL}>
+      {/* Header */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <h1 className="flex items-center gap-2.5 font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
+            <span className="bg-gradient-brand flex size-9 shrink-0 items-center justify-center rounded-xl text-primary-foreground shadow-sm">
+              <Sparkles className="size-4.5" aria-hidden />
+            </span>
+            <span>
+              <ResearchRunHeading
+                symbol={results.run.symbol}
+                companyName={results.companyName}
+                suffix="catalysts"
+              />
+            </span>
+          </h1>
+          <StatusBadge
+            status={results.run.status}
+            cacheHit={results.run.cacheHit}
+          />
+        </div>
+        {isCompletedWithEvents ? (
+          <Button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="bg-gradient-brand w-full text-primary-foreground shadow-sm transition-transform hover:scale-[1.02] hover:brightness-105 sm:w-auto"
+          >
+            {isSaving ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : null}
+            Save to portfolio
+          </Button>
+        ) : null}
+      </header>
 
-        <CardContent className="space-y-4">
-          {saveMessage ? (
-            <Alert>
-              <AlertDescription>{saveMessage}</AlertDescription>
+      <div className="mt-6 space-y-4">
+        {isCompletedWithEvents ? (
+          <Show when="signed-out">
+            <Alert className="glass border-0 ring-1 ring-border/60">
+              <AlertDescription>
+                Sign in with Google to save these catalysts to a portfolio.
+              </AlertDescription>
             </Alert>
-          ) : null}
+          </Show>
+        ) : null}
 
-          {results.run.status === "completed" && results.events.length > 0 ? (
-            <Show when="signed-out">
-              <Alert>
-                <AlertDescription>
-                  Sign in with Google to save these catalysts to a portfolio.
-                </AlertDescription>
-              </Alert>
-            </Show>
-          ) : null}
-
-          {results.run.status === "completed" &&
-          results.events.length > 0 ? (
-            <Show when="signed-in">
-              <div className="rounded-lg border bg-muted/30 p-4 space-y-4">
+        {isCompletedWithEvents ? (
+          <Show when="signed-in">
+            <div className="glass space-y-4 rounded-2xl p-4 ring-1 ring-border/60 sm:p-5">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="portfolio-default-name-results">
                     Default portfolio name
@@ -298,50 +393,41 @@ export function ResearchRunResults({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium leading-snug">
-                    Your portfolios
-                  </p>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    {portfolioList.length > 0 ? (
-                      portfolioList.map((portfolio: PortfolioView) => (
-                        <p key={portfolio._id}>{portfolio.name}</p>
-                      ))
-                    ) : (
-                      <p>
-                        No portfolios yet. Saving a completed run creates one
-                        with every catalyst from that run.
-                      </p>
-                    )}
-                  </div>
-                </div>
               </div>
-            </Show>
-          ) : null}
+              {portfolioList.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No portfolios yet. Saving this run creates one with every
+                  catalyst from it.
+                </p>
+              ) : null}
+            </div>
+          </Show>
+        ) : null}
 
-          {results.run.error ? (
-            <Alert variant="destructive">
-              <AlertDescription>{results.run.error}</AlertDescription>
-            </Alert>
-          ) : null}
+        {results.run.error ? (
+          <Alert variant="destructive">
+            <AlertDescription>{results.run.error}</AlertDescription>
+          </Alert>
+        ) : null}
 
-          {results.events.length > 0 ? (
+        {results.events.length > 0 ? (
+          <div className="glass overflow-hidden rounded-2xl ring-1 ring-border/60">
             <Table className="min-w-[860px]">
               <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-22 min-w-22 text-xs tracking-wide text-muted-foreground uppercase">
+                <TableRow className="border-border/60 bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="w-22 min-w-22 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
                     Quarter
                   </TableHead>
-                  <TableHead className="max-w-44 text-xs tracking-wide text-muted-foreground uppercase">
+                  <TableHead className="max-w-44 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
                     Expected timing
                   </TableHead>
-                  <TableHead className="max-w-56 text-xs tracking-wide text-muted-foreground uppercase">
+                  <TableHead className="max-w-56 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
                     Event / milestone
                   </TableHead>
-                  <TableHead className="max-w-xl min-w-48 text-xs tracking-wide text-muted-foreground uppercase">
+                  <TableHead className="max-w-xl min-w-48 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
                     Strategic significance
                   </TableHead>
-                  <TableHead className="w-20 max-w-20 min-w-20 text-xs tracking-wide text-muted-foreground uppercase">
+                  <TableHead className="w-20 max-w-20 min-w-20 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
                     Sources
                   </TableHead>
                 </TableRow>
@@ -369,8 +455,11 @@ export function ResearchRunResults({
                         : ""
 
                   return (
-                    <TableRow key={event._id}>
-                      <TableCell className="align-top whitespace-normal text-muted-foreground">
+                    <TableRow
+                      key={event._id}
+                      className="border-border/40 transition-colors hover:bg-primary/[0.04]"
+                    >
+                      <TableCell className="align-top text-sm font-medium whitespace-normal text-muted-foreground">
                         {quarterLabel}
                       </TableCell>
                       <TableCell className="max-w-44 align-top whitespace-normal text-muted-foreground">
@@ -426,13 +515,15 @@ export function ResearchRunResults({
                 })}
               </TableBody>
             </Table>
-          ) : results.run.status === "completed" && !results.run.error ? (
+          </div>
+        ) : results.run.status === "completed" && !results.run.error ? (
+          <div className="glass rounded-2xl p-8 text-center ring-1 ring-border/60">
             <p className="text-sm text-muted-foreground">
               No catalyst events were extracted for this run.
             </p>
-          ) : null}
-        </CardContent>
-      </Card>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

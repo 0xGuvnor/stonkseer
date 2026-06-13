@@ -114,7 +114,7 @@ export function HomeResearchClient() {
   const isSubmitting = form.formState.isSubmitting
 
   return (
-    <section className="mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-3xl flex-col items-center justify-center gap-8 px-5 pb-12 sm:px-6 md:min-h-full">
+    <section className="mx-auto flex min-h-full w-full max-w-3xl flex-col items-center justify-center gap-8 px-5 pb-6 sm:px-6 md:pb-12">
       <div className="flex w-full max-w-xl flex-col items-center text-center">
         <Badge
           variant="secondary"
