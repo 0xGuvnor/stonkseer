@@ -219,24 +219,39 @@ export function ResearchRunResults({
     try {
       const selectedPortfolioValue =
         portfolioSelection || portfolios?.[0]?._id || NEW_PORTFOLIO_VALUE
-      const portfolioId =
-        selectedPortfolioValue !== NEW_PORTFOLIO_VALUE
-          ? (selectedPortfolioValue as Id<"portfolios">)
-          : await createPortfolio({
-              name: portfolioName,
-            })
+      const createdNewPortfolio =
+        selectedPortfolioValue === NEW_PORTFOLIO_VALUE
+      const portfolioId = createdNewPortfolio
+        ? await createPortfolio({
+            name: portfolioName,
+          })
+        : (selectedPortfolioValue as Id<"portfolios">)
+      const targetPortfolioName = createdNewPortfolio
+        ? portfolioName.trim() || "My Portfolio"
+        : (portfolioList.find((portfolio) => portfolio._id === portfolioId)
+            ?.name ?? "your portfolio")
 
-      await saveResearchToPortfolio({
+      const saveResult = await saveResearchToPortfolio({
         portfolioId,
         symbol: results.run.symbol,
         eventIds,
       })
-      toast.success(
-        `Saved ${results.run.symbol} to your portfolio`,
-        {
+
+      if (saveResult.alreadyInPortfolio) {
+        toast.info(
+          `${results.run.symbol} is already in ${targetPortfolioName}`,
+          {
+            description:
+              saveResult.newTrackedEventCount > 0
+                ? `${saveResult.newTrackedEventCount} new catalyst${saveResult.newTrackedEventCount === 1 ? "" : "s"} added.`
+                : "Tracked catalysts are up to date.",
+          },
+        )
+      } else {
+        toast.success(`Saved ${results.run.symbol} to ${targetPortfolioName}`, {
           description: `${eventIds.length} catalyst${eventIds.length === 1 ? "" : "s"} added.`,
-        }
-      )
+        })
+      }
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not save to portfolio."
@@ -320,7 +335,7 @@ export function ResearchRunResults({
           <Button
             onClick={handleSave}
             disabled={isSaving}
-            className="bg-gradient-brand w-full text-primary-foreground shadow-sm transition-transform hover:scale-[1.02] hover:brightness-105 sm:w-auto"
+            className="bg-gradient-brand w-full cursor-pointer text-primary-foreground shadow-sm transition-transform hover:scale-[1.02] hover:brightness-105 sm:w-auto"
           >
             {isSaving ? (
               <Loader2 className="size-4 animate-spin" />

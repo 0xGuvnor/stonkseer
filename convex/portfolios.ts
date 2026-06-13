@@ -205,6 +205,8 @@ export const saveResearchToPortfolio = mutation({
   returns: v.object({
     portfolioStockId: v.id("portfolioStocks"),
     trackedEventIds: v.array(v.id("trackedEvents")),
+    alreadyInPortfolio: v.boolean(),
+    newTrackedEventCount: v.number(),
   }),
   handler: async (ctx, args) => {
     const { user, portfolio } = await requirePortfolioOwner(
@@ -242,6 +244,7 @@ export const saveResearchToPortfolio = mutation({
         q.eq("portfolioId", portfolio._id).eq("symbol", symbol),
       )
       .take(1)
+    const alreadyInPortfolio = existingPortfolioStocks[0] !== undefined
     let portfolioStock = existingPortfolioStocks[0]
 
     if (portfolioStock) {
@@ -272,6 +275,7 @@ export const saveResearchToPortfolio = mutation({
     }
 
     const trackedEventIds = []
+    let newTrackedEventCount = 0
 
     for (const eventId of args.eventIds) {
       const event = await ctx.db.get(eventId)
@@ -302,9 +306,15 @@ export const saveResearchToPortfolio = mutation({
         createdAt: now,
       })
       trackedEventIds.push(trackedEventId)
+      newTrackedEventCount += 1
     }
 
-    return { portfolioStockId: portfolioStock._id, trackedEventIds }
+    return {
+      portfolioStockId: portfolioStock._id,
+      trackedEventIds,
+      alreadyInPortfolio,
+      newTrackedEventCount,
+    }
   },
 })
 
