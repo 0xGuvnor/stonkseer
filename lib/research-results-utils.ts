@@ -108,7 +108,12 @@ export function parseAnchorDate(event: CatalystEventView): Date | null {
   )
 }
 
-export function eventTimingLabel(event: CatalystEventView) {
+export function eventTimingLabel(event: {
+  expectedDate?: string
+  windowStart?: string
+  windowEnd?: string
+  datePrecision: string
+}) {
   if (event.expectedDate) {
     return formatTimingFragment(event.expectedDate)
   }

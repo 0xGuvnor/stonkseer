@@ -3,7 +3,7 @@ import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import type { Id } from "./_generated/dataModel"
 import { internalMutation, query } from "./_generated/server"
-import type { MutationCtx, QueryCtx } from "./_generated/server"
+import type { MutationCtx } from "./_generated/server"
 import {
   catalystStatusValidator,
   datePrecisionValidator,
@@ -16,6 +16,7 @@ import {
   getCurrentUserOrNull,
   getOrCreateCurrentUser,
 } from "./lib/auth"
+import { lookupCompanyNameForSymbol } from "./lib/companyName"
 import {
   isTickerSymbolSyntaxValid,
   normalizeTickerSymbol,
@@ -386,27 +387,6 @@ export const getRunResults = query({
     return { run, events: eventsWithSources, companyName }
   },
 })
-
-async function lookupCompanyNameForSymbol(
-  ctx: QueryCtx,
-  symbol: string,
-): Promise<string | undefined> {
-  const stock = await ctx.db
-    .query("stocks")
-    .withIndex("by_symbol", (q) => q.eq("symbol", symbol))
-    .unique()
-
-  if (stock?.companyName) {
-    return stock.companyName
-  }
-
-  const validation = await ctx.db
-    .query("tickerValidations")
-    .withIndex("by_symbol", (q) => q.eq("symbol", symbol))
-    .unique()
-
-  return validation?.companyName
-}
 
 export const listUpcomingForPortfolio = query({
   args: {

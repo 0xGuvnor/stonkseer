@@ -1,15 +1,36 @@
 import { v } from "convex/values"
 
+import {
+  catalystStatusValidator,
+  datePrecisionValidator,
+  eventTypeValidator,
+  expectedImpactValidator,
+} from "./schema"
 import { mutation, query } from "./_generated/server"
 import {
   getCurrentUserOrNull,
   getOrCreateCurrentUser,
   requirePortfolioOwner,
 } from "./lib/auth"
+import { lookupCompanyNameForSymbol } from "./lib/companyName"
+import {
+  filterUpcomingCatalystEvents,
+  findNearestUpcomingEvent,
+} from "../lib/portfolio-catalyst-utils"
 import {
   isTickerSymbolSyntaxValid,
   normalizeTickerSymbol,
 } from "../lib/ticker-symbol"
+
+function validatePortfolioName(name: string) {
+  const trimmed = name.trim()
+
+  if (trimmed.length < 1 || trimmed.length > 80) {
+    throw new Error("Portfolio name must be between 1 and 80 characters")
+  }
+
+  return trimmed
+}
 
 const portfolioReturn = v.object({
   _id: v.id("portfolios"),
@@ -33,6 +54,67 @@ const trackedEventReturn = v.object({
     v.literal("day_before"),
   ),
   createdAt: v.number(),
+})
+
+const sourceReturn = v.object({
+  _id: v.id("eventSources"),
+  _creationTime: v.number(),
+  eventId: v.id("catalystEvents"),
+  url: v.string(),
+  title: v.string(),
+  publisher: v.string(),
+  publishedAt: v.optional(v.string()),
+  accessedAt: v.number(),
+  quote: v.string(),
+  supportsFields: v.array(v.string()),
+  provenance: v.optional(v.string()),
+})
+
+const eventWithSourcesReturn = v.object({
+  _id: v.id("catalystEvents"),
+  _creationTime: v.number(),
+  stockId: v.optional(v.id("stocks")),
+  sourceRunId: v.optional(v.id("researchRuns")),
+  symbol: v.string(),
+  title: v.string(),
+  summary: v.string(),
+  whyItMatters: v.string(),
+  eventType: eventTypeValidator,
+  expectedDate: v.optional(v.string()),
+  windowStart: v.optional(v.string()),
+  windowEnd: v.optional(v.string()),
+  datePrecision: datePrecisionValidator,
+  confidence: v.number(),
+  status: catalystStatusValidator,
+  expectedImpact: expectedImpactValidator,
+  sourceCount: v.number(),
+  lastVerifiedAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  sources: v.array(sourceReturn),
+})
+
+const nextEventReturn = v.object({
+  title: v.string(),
+  expectedDate: v.optional(v.string()),
+  windowStart: v.optional(v.string()),
+  windowEnd: v.optional(v.string()),
+  datePrecision: datePrecisionValidator,
+})
+
+const holdingReturn = v.object({
+  portfolioStockId: v.id("portfolioStocks"),
+  symbol: v.string(),
+  companyName: v.optional(v.string()),
+  catalystCount: v.number(),
+  nextEvent: v.optional(nextEventReturn),
+  addedAt: v.number(),
+})
+
+const portfolioPageDataReturn = v.object({
+  portfolio: portfolioReturn,
+  holdings: v.array(holdingReturn),
+  catalysts: v.array(eventWithSourcesReturn),
 })
 
 export const listMine = query({
@@ -59,11 +141,7 @@ export const create = mutation({
   returns: v.id("portfolios"),
   handler: async (ctx, args) => {
     const user = await getOrCreateCurrentUser(ctx)
-    const name = args.name.trim()
-
-    if (name.length < 1 || name.length > 80) {
-      throw new Error("Portfolio name must be between 1 and 80 characters")
-    }
+    const name = validatePortfolioName(args.name)
 
     const now = Date.now()
 
@@ -222,5 +300,169 @@ export const saveResearchToPortfolio = mutation({
     }
 
     return { portfolioStockId: portfolioStock._id, trackedEventIds }
+  },
+})
+
+export const getPortfolioPageData = query({
+  args: {
+    portfolioId: v.id("portfolios"),
+    now: v.number(),
+  },
+  returns: portfolioPageDataReturn,
+  handler: async (ctx, args) => {
+    const { portfolio } = await requirePortfolioOwner(ctx, args.portfolioId)
+    const portfolioStocks = await ctx.db
+      .query("portfolioStocks")
+      .withIndex("by_portfolio", (q) => q.eq("portfolioId", portfolio._id))
+      .collect()
+    const activeStocks = portfolioStocks.filter((stock) => stock.status === "active")
+    const trackedEvents = await ctx.db
+      .query("trackedEvents")
+      .withIndex("by_portfolio", (q) => q.eq("portfolioId", portfolio._id))
+      .collect()
+
+    const allEventsWithSources = []
+
+    for (const trackedEvent of trackedEvents) {
+      const event = await ctx.db.get(trackedEvent.eventId)
+
+      if (!event) {
+        continue
+      }
+
+      const sources = await ctx.db
+        .query("eventSources")
+        .withIndex("by_event", (q) => q.eq("eventId", event._id))
+        .collect()
+
+      const eventWithSources = { ...event, sources }
+      allEventsWithSources.push(eventWithSources)
+    }
+
+    const holdings = []
+
+    for (const portfolioStock of activeStocks) {
+      const stockEvents = allEventsWithSources.filter((event) =>
+        trackedEvents.some(
+          (tracked) =>
+            tracked.portfolioStockId === portfolioStock._id &&
+            tracked.eventId === event._id,
+        ),
+      )
+      const nearest = findNearestUpcomingEvent(stockEvents, args.now)
+      const companyName = await lookupCompanyNameForSymbol(ctx, portfolioStock.symbol)
+
+      holdings.push({
+        portfolioStockId: portfolioStock._id,
+        symbol: portfolioStock.symbol,
+        companyName,
+        catalystCount: stockEvents.length,
+        nextEvent: nearest
+          ? {
+              title: nearest.title,
+              expectedDate: nearest.expectedDate,
+              windowStart: nearest.windowStart,
+              windowEnd: nearest.windowEnd,
+              datePrecision: nearest.datePrecision,
+            }
+          : undefined,
+        addedAt: portfolioStock.createdAt,
+      })
+    }
+
+    holdings.sort((a, b) => a.symbol.localeCompare(b.symbol))
+
+    const catalysts = filterUpcomingCatalystEvents(allEventsWithSources, args.now)
+
+    return {
+      portfolio,
+      holdings,
+      catalysts,
+    }
+  },
+})
+
+export const rename = mutation({
+  args: {
+    portfolioId: v.id("portfolios"),
+    name: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { portfolio } = await requirePortfolioOwner(ctx, args.portfolioId)
+    const name = validatePortfolioName(args.name)
+
+    await ctx.db.patch(portfolio._id, {
+      name,
+      updatedAt: Date.now(),
+    })
+
+    return null
+  },
+})
+
+export const remove = mutation({
+  args: {
+    portfolioId: v.id("portfolios"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { portfolio } = await requirePortfolioOwner(ctx, args.portfolioId)
+
+    const trackedEvents = await ctx.db
+      .query("trackedEvents")
+      .withIndex("by_portfolio", (q) => q.eq("portfolioId", portfolio._id))
+      .collect()
+
+    for (const trackedEvent of trackedEvents) {
+      await ctx.db.delete(trackedEvent._id)
+    }
+
+    const portfolioStocks = await ctx.db
+      .query("portfolioStocks")
+      .withIndex("by_portfolio", (q) => q.eq("portfolioId", portfolio._id))
+      .collect()
+
+    for (const portfolioStock of portfolioStocks) {
+      await ctx.db.delete(portfolioStock._id)
+    }
+
+    await ctx.db.delete(portfolio._id)
+
+    return null
+  },
+})
+
+export const removeStock = mutation({
+  args: {
+    portfolioStockId: v.id("portfolioStocks"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const portfolioStock = await ctx.db.get(args.portfolioStockId)
+
+    if (!portfolioStock) {
+      throw new Error("Portfolio stock not found")
+    }
+
+    await requirePortfolioOwner(ctx, portfolioStock.portfolioId)
+
+    const trackedEvents = await ctx.db
+      .query("trackedEvents")
+      .withIndex("by_portfolio", (q) =>
+        q.eq("portfolioId", portfolioStock.portfolioId),
+      )
+      .collect()
+    const stockTrackedEvents = trackedEvents.filter(
+      (tracked) => tracked.portfolioStockId === portfolioStock._id,
+    )
+
+    for (const trackedEvent of stockTrackedEvents) {
+      await ctx.db.delete(trackedEvent._id)
+    }
+
+    await ctx.db.delete(portfolioStock._id)
+
+    return null
   },
 })

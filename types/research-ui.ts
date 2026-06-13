@@ -28,6 +28,38 @@ export type PortfolioView = {
   name: string
 }
 
+export type PortfolioNextEventView = {
+  title: string
+  expectedDate?: string
+  windowStart?: string
+  windowEnd?: string
+  datePrecision: string
+}
+
+export type PortfolioHoldingView = {
+  portfolioStockId: Id<"portfolioStocks">
+  symbol: string
+  companyName?: string
+  catalystCount: number
+  nextEvent?: PortfolioNextEventView
+  addedAt: number
+}
+
+export type PortfolioCatalystEventView = CatalystEventView & {
+  symbol: string
+}
+
+export type PortfolioPageDataView = {
+  portfolio: PortfolioView & {
+    _creationTime: number
+    userId: Id<"users">
+    createdAt: number
+    updatedAt: number
+  }
+  holdings: PortfolioHoldingView[]
+  catalysts: PortfolioCatalystEventView[]
+}
+
 export type AnonymousResearchRunSuccess = {
   runId: Id<"researchRuns">
   anonymousTokenHash: string
