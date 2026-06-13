@@ -190,6 +190,7 @@ export function ResearchRunResults({
   const portfolioList = portfolios ?? []
   const saveTargetValue =
     portfolioSelection || portfolioList[0]?._id || NEW_PORTFOLIO_VALUE
+  const isCreatingNewPortfolio = saveTargetValue === NEW_PORTFOLIO_VALUE
 
   const querying = results === undefined
   const runningOrQueued =
@@ -352,6 +353,7 @@ export function ResearchRunResults({
                     id="portfolio-default-name-results"
                     value={portfolioName}
                     onChange={(event) => setPortfolioName(event.target.value)}
+                    disabled={!isCreatingNewPortfolio}
                   />
                 </div>
                 <div className="space-y-2">
