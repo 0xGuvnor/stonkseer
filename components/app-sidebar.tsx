@@ -150,7 +150,11 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <Show when="signed-out">
               <SignInButton mode="modal">
-                <SidebarMenuButton tooltip="Sign in" className="rounded-xl">
+                <SidebarMenuButton
+                  tooltip="Sign in"
+                  className="rounded-xl"
+                  onClick={closeMobileSidebar}
+                >
                   <LogIn />
                   <span>Sign in</span>
                 </SidebarMenuButton>
