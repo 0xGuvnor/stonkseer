@@ -23,6 +23,7 @@ import {
 import { RESEARCH_STRATEGY_VERSION } from "../lib/research-strategy"
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
+const RESEARCH_CACHE_TTL_MS = 7 * ONE_DAY_MS
 const AUTHENTICATED_DAILY_RUN_LIMIT = 10
 const AUTHENTICATED_CONCURRENT_RUN_LIMIT = 2
 
@@ -140,7 +141,7 @@ async function getFreshCompletedRunId(
     .filter(
       (run) =>
         run.completedAt !== undefined &&
-        run.completedAt > now - ONE_DAY_MS &&
+        run.completedAt > now - RESEARCH_CACHE_TTL_MS &&
         run.researchStrategyVersion === RESEARCH_STRATEGY_VERSION,
     )
     .sort(
