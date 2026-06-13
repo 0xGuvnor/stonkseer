@@ -22,6 +22,7 @@ import {
   resolveSelectedPortfolioId,
   writeLastPortfolioId,
 } from "@/lib/portfolio-selection"
+import { RESEARCH_ROUTE_CENTER_SHELL } from "@/lib/research-route-layout"
 import type { PortfolioCatalystEventView, PortfolioPageDataView } from "@/types/research-ui"
 
 const PAGE_SHELL = "mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8"
@@ -154,21 +155,26 @@ export function PortfoliosClient() {
         />
       }
     >
-      <div className="mx-auto flex min-h-full w-full max-w-md flex-col items-center justify-center px-5 text-center sm:px-6">
+      <section className={RESEARCH_ROUTE_CENTER_SHELL}>
         <EmptyState
+          shell={false}
           icon={Briefcase}
           title="Sign in to use portfolios"
           description="Save catalyst research from any ticker and organize tracked events into portfolios. Sign in with Google to get started."
+          actions={
+            <div className="flex flex-col items-center gap-2">
+              <SignInButton mode="modal">
+                <Button className="bg-gradient-brand text-primary-foreground shadow-sm">
+                  Sign in with Google
+                </Button>
+              </SignInButton>
+              <Button asChild variant="link">
+                <Link href="/">Research a ticker</Link>
+              </Button>
+            </div>
+          }
         />
-        <SignInButton mode="modal">
-          <Button className="bg-gradient-brand -mt-2 text-primary-foreground shadow-sm">
-            Sign in with Google
-          </Button>
-        </SignInButton>
-        <Button asChild variant="link" className="mt-2">
-          <Link href="/">Research a ticker</Link>
-        </Button>
-      </div>
+      </section>
     </Show>
   )
 }

@@ -1,5 +1,6 @@
 import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
+import type { ReactNode } from "react"
 
 import { Button } from "@/components/ui/button"
 import { MOBILE_CENTER_PAGE_SHELL } from "@/lib/research-route-layout"
@@ -11,6 +12,10 @@ export type EmptyStateProps = {
   description: string
   eyebrow?: string
   cta?: { label: string; href: string }
+  actions?: ReactNode
+  /** When false, render content only (no viewport-centering shell). */
+  shell?: boolean
+  descriptionClassName?: string
   className?: string
 }
 
@@ -20,16 +25,13 @@ export function EmptyState({
   description,
   eyebrow,
   cta,
+  actions,
+  shell = true,
+  descriptionClassName,
   className,
 }: EmptyStateProps) {
-  return (
-    <div
-      className={cn(
-        MOBILE_CENTER_PAGE_SHELL,
-        "w-full max-w-md",
-        className
-      )}
-    >
+  const content = (
+    <>
       {/* Glowing brand icon chip */}
       <div className="relative mb-6">
         <div
@@ -53,7 +55,14 @@ export function EmptyState({
       <h1 className="font-heading text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
         {title}
       </h1>
-      <p className="mt-3 text-pretty text-muted-foreground">{description}</p>
+      <p
+        className={cn(
+          "mt-3 max-w-lg text-pretty text-muted-foreground",
+          descriptionClassName,
+        )}
+      >
+        {description}
+      </p>
 
       {cta ? (
         <Button
@@ -63,6 +72,33 @@ export function EmptyState({
           <Link href={cta.href}>{cta.label}</Link>
         </Button>
       ) : null}
+
+      {actions ? <div className="mt-7">{actions}</div> : null}
+    </>
+  )
+
+  if (!shell) {
+    return (
+      <div
+        className={cn(
+          "flex w-full max-w-md flex-col items-center text-center",
+          className,
+        )}
+      >
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={cn(
+        MOBILE_CENTER_PAGE_SHELL,
+        "w-full max-w-md",
+        className,
+      )}
+    >
+      {content}
     </div>
   )
 }

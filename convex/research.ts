@@ -10,6 +10,7 @@ import {
   eventTypeValidator,
   expectedImpactValidator,
   researchStatusValidator,
+  timingShapeValidator,
 } from "./schema"
 import {
   getCurrentUser,
@@ -84,6 +85,8 @@ const eventWithSourcesReturn = v.object({
   expectedDate: v.optional(v.string()),
   windowStart: v.optional(v.string()),
   windowEnd: v.optional(v.string()),
+  periodKey: v.optional(v.string()),
+  timingShape: timingShapeValidator,
   datePrecision: datePrecisionValidator,
   confidence: v.number(),
   status: catalystStatusValidator,

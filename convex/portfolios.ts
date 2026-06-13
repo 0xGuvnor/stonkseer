@@ -5,6 +5,7 @@ import {
   datePrecisionValidator,
   eventTypeValidator,
   expectedImpactValidator,
+  timingShapeValidator,
 } from "./schema"
 import { mutation, query } from "./_generated/server"
 import {
@@ -83,6 +84,8 @@ const eventWithSourcesReturn = v.object({
   expectedDate: v.optional(v.string()),
   windowStart: v.optional(v.string()),
   windowEnd: v.optional(v.string()),
+  periodKey: v.optional(v.string()),
+  timingShape: timingShapeValidator,
   datePrecision: datePrecisionValidator,
   confidence: v.number(),
   status: catalystStatusValidator,
@@ -99,6 +102,8 @@ const nextEventReturn = v.object({
   expectedDate: v.optional(v.string()),
   windowStart: v.optional(v.string()),
   windowEnd: v.optional(v.string()),
+  periodKey: v.optional(v.string()),
+  timingShape: timingShapeValidator,
   datePrecision: datePrecisionValidator,
 })
 
@@ -363,6 +368,8 @@ export const getPortfolioPageData = query({
               expectedDate: nearest.expectedDate,
               windowStart: nearest.windowStart,
               windowEnd: nearest.windowEnd,
+              periodKey: nearest.periodKey,
+              timingShape: nearest.timingShape,
               datePrecision: nearest.datePrecision,
             }
           : undefined,

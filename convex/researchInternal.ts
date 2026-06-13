@@ -6,6 +6,7 @@ import {
   datePrecisionValidator,
   eventTypeValidator,
   expectedImpactValidator,
+  timingShapeValidator,
 } from "./schema"
 import { RESEARCH_STRATEGY_VERSION } from "../lib/research-strategy"
 import { isPortfolioStockDueForRefresh } from "../lib/portfolio-refresh"
@@ -28,6 +29,8 @@ const eventInput = v.object({
   expectedDate: v.optional(v.string()),
   windowStart: v.optional(v.string()),
   windowEnd: v.optional(v.string()),
+  periodKey: v.optional(v.string()),
+  timingShape: timingShapeValidator,
   datePrecision: datePrecisionValidator,
   confidence: v.number(),
   status: catalystStatusValidator,
@@ -218,6 +221,8 @@ export const upsertResearchResults = internalMutation({
         expectedDate: event.expectedDate,
         windowStart: event.windowStart,
         windowEnd: event.windowEnd,
+        periodKey: event.periodKey,
+        timingShape: event.timingShape,
         datePrecision: event.datePrecision,
         confidence: event.confidence,
         status: event.status,

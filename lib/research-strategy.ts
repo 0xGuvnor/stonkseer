@@ -1,1 +1,1 @@
-export const RESEARCH_STRATEGY_VERSION = "report-merge-v8"
+export const RESEARCH_STRATEGY_VERSION = "catalyst-timing-v2"

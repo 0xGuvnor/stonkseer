@@ -109,7 +109,7 @@ export function PortfolioHoldingsTable({
                 {holding.nextEvent ? (
                   <div className="space-y-0.5">
                     <p className="text-sm text-muted-foreground">
-                      {eventTimingLabel(holding.nextEvent)}
+                      {eventTimingLabel(holding.nextEvent, now)}
                     </p>
                     <p className="text-sm font-medium">{holding.nextEvent.title}</p>
                   </div>

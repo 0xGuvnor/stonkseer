@@ -5,7 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useAction, useConvexAuth } from "convex/react"
 import { ArrowRight, Loader2, Search, TrendingUp } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useForm } from "react-hook-form"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -47,6 +47,7 @@ export function HomeResearchClient() {
   })
 
   const [message, setMessage] = useState<string | null>(null)
+  const symbolInputRef = useRef<HTMLInputElement>(null)
 
   const { isLoaded: clerkLoaded, isSignedIn } = useAuth()
   const { isAuthenticated } = useConvexAuth()
@@ -158,6 +159,10 @@ export function HomeResearchClient() {
                         maxLength={10}
                         placeholder="Enter a ticker, e.g. AAPL"
                         {...field}
+                        ref={(element) => {
+                          field.ref(element)
+                          symbolInputRef.current = element
+                        }}
                         autoFocus
                       />
                     </FormControl>
@@ -201,12 +206,18 @@ export function HomeResearchClient() {
                 variant="outline"
                 size="sm"
                 className="rounded-full border-border/70 bg-card/50 px-3.5 font-medium tracking-wide backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:text-primary"
-                onClick={() =>
+                onClick={() => {
                   form.setValue("symbol", symbol, {
                     shouldValidate: true,
                     shouldDirty: true,
                   })
-                }
+                  requestAnimationFrame(() => {
+                    const input = symbolInputRef.current
+                    if (!input) return
+                    input.focus()
+                    input.setSelectionRange(symbol.length, symbol.length)
+                  })
+                }}
               >
                 {symbol}
               </Button>

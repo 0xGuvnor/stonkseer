@@ -9,6 +9,7 @@ const baseEvent: CatalystResearch["events"][number] = {
   summary: "Regulators may rule on supervised autonomy in 2026.",
   whyItMatters: "Unlocks revenue optionality in a large auto market.",
   eventType: "regulatory",
+  timingShape: "unknown",
   datePrecision: "unknown",
   confidence: 0.6,
   status: "likely",

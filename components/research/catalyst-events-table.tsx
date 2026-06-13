@@ -14,7 +14,7 @@ import {
 import {
   eventTimingLabel,
   formatQuarterLabel,
-  parseAnchorDate,
+  parseSortAnchor,
   quarterKeyFromDate,
   sortCatalystEventsByAnchor,
 } from "@/lib/research-results-utils"
@@ -25,6 +25,7 @@ export type CatalystEventsTableProps = {
   showSymbolColumn?: boolean
   getSymbol?: (event: CatalystEventView) => string | undefined
   className?: string
+  now?: number
 }
 
 export function CatalystEventsTable({
@@ -32,9 +33,10 @@ export function CatalystEventsTable({
   showSymbolColumn = false,
   getSymbol,
   className,
+  now = Date.now(),
 }: CatalystEventsTableProps) {
   const sortedEvents =
-    events.length > 0 ? sortCatalystEventsByAnchor(events) : []
+    events.length > 0 ? sortCatalystEventsByAnchor(events, now) : []
 
   return (
     <div
@@ -70,9 +72,9 @@ export function CatalystEventsTable({
         </TableHeader>
         <TableBody>
           {sortedEvents.map((event, index) => {
-            const anchor = parseAnchorDate(event)
+            const anchor = parseSortAnchor(event, now)
             const prevEvent = index > 0 ? sortedEvents[index - 1] : undefined
-            const prevAnchor = prevEvent ? parseAnchorDate(prevEvent) : null
+            const prevAnchor = prevEvent ? parseSortAnchor(prevEvent, now) : null
             const qKey = anchor ? quarterKeyFromDate(anchor) : "\0unknown"
             const prevQKey = prevAnchor
               ? quarterKeyFromDate(prevAnchor)
@@ -109,7 +111,7 @@ export function CatalystEventsTable({
                   {quarterLabel}
                 </TableCell>
                 <TableCell className="max-w-44 align-top whitespace-normal text-muted-foreground">
-                  {eventTimingLabel(event)}
+                  {eventTimingLabel(event, now)}
                 </TableCell>
                 <TableCell className="max-w-56 align-top font-medium whitespace-normal">
                   {event.title}

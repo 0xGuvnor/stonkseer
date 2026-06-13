@@ -1,4 +1,5 @@
 import type { Id } from "@/convex/_generated/dataModel"
+import type { TimingShape } from "@/lib/catalyst-timing"
 
 export type EventSourceView = {
   _id: Id<"eventSources">
@@ -17,6 +18,8 @@ export type CatalystEventView = {
   expectedDate?: string
   windowStart?: string
   windowEnd?: string
+  periodKey?: string
+  timingShape: TimingShape
   datePrecision: string
   confidence: number
   expectedImpact: string
@@ -33,6 +36,8 @@ export type PortfolioNextEventView = {
   expectedDate?: string
   windowStart?: string
   windowEnd?: string
+  periodKey?: string
+  timingShape: TimingShape
   datePrecision: string
 }
 

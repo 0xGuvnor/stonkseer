@@ -1,8 +1,24 @@
 import { z } from "zod"
 
+import {
+  buildResearchHorizonEnd,
+  buildResearchRunDate,
+  normalizeCatalystEventTiming,
+} from "./catalyst-timing"
+
 const MAX_EVENT_SUMMARY_CHARS = 360
 const MAX_EVENT_WHY_CHARS = 240
-const MAX_CATALYST_EVENTS = 20
+export const MAX_CATALYST_EVENTS = 50
+
+const timingShapeSchema = z.enum([
+  "point",
+  "closed_window",
+  "from",
+  "by",
+  "period",
+  "open",
+  "unknown",
+])
 
 function clampResearchText(value: string, maxLen: number): string {
   const t = value.trim()
@@ -61,9 +77,11 @@ export const catalystEventSchema = z.object({
     "legal",
     "other",
   ]),
+  timingShape: timingShapeSchema,
   expectedDate: z.string().optional(),
   windowStart: z.string().optional(),
   windowEnd: z.string().optional(),
+  periodKey: z.string().optional(),
   datePrecision: z.enum(["exact", "month", "quarter", "half", "unknown"]),
   confidence: z.number().min(0).max(1),
   status: z.enum(["confirmed", "likely", "speculative"]),
@@ -126,18 +144,31 @@ export const catalystEventAiSchema = z.object({
     .describe(
       "One primary label per distinct real-world milestone. If a flagship conference, keynote, or investor forum is also where launches are expected, prefer conference or investor_day over a second product or launch row for the same dates or official page.",
     ),
+  timingShape: timingShapeSchema.describe(
+    "Timing semantics: point=exact date; closed_window=source-backed start and end; from=has not started yet, begins after windowStart; by=deadline only; period=fuzzy period via periodKey; open=already underway or open-ended, may use past windowStart/periodKey; unknown=no dates.",
+  ),
   expectedDate: z
     .string()
     .nullable()
-    .describe("Exact expected date if known, otherwise null"),
+    .describe("Exact expected date when timingShape is point, otherwise null"),
   windowStart: z
     .string()
     .nullable()
-    .describe("Start of expected event window if known, otherwise null"),
+    .describe(
+      "Source-stated start when timingShape is from, open, or closed_window. For open, may be in the past when already underway. Never today's run date unless a source explicitly anchors timing to today. Otherwise null.",
+    ),
   windowEnd: z
     .string()
     .nullable()
-    .describe("End of expected event window if known, otherwise null"),
+    .describe(
+      "Source-stated deadline or bounded window end when timingShape is by or closed_window. Never the 12-month research horizon. Otherwise null.",
+    ),
+  periodKey: z
+    .string()
+    .nullable()
+    .describe(
+      "Fuzzy period YYYY, YYYY-Qn, YYYY-Hn, or YYYY-MM when timingShape is period or open, otherwise null",
+    ),
   datePrecision: z.enum(["exact", "month", "quarter", "half", "unknown"]),
   confidence: z.number().min(0).max(1),
   status: z.enum(["confirmed", "likely", "speculative"]),
@@ -166,39 +197,54 @@ export type CatalystResearchAi = z.infer<typeof catalystResearchAiSchema>
 
 export function normalizeCatalystResearchAi(
   research: CatalystResearchAi,
+  now: number,
 ): CatalystResearch {
+  const researchHorizonEnd = buildResearchHorizonEnd(now)
+  const researchRunDate = buildResearchRunDate(now)
+
   return {
     ...(research.companyName !== null
       ? { companyName: research.companyName }
       : {}),
     ...(research.exchange !== null ? { exchange: research.exchange } : {}),
-    events: research.events.map((event) => ({
-      title: event.title,
-      summary: clampResearchText(event.summary, MAX_EVENT_SUMMARY_CHARS),
-      whyItMatters: clampResearchText(
-        event.whyItMatters,
-        MAX_EVENT_WHY_CHARS,
-      ),
-      eventType: event.eventType,
-      ...(event.expectedDate !== null
-        ? { expectedDate: event.expectedDate }
-        : {}),
-      ...(event.windowStart !== null ? { windowStart: event.windowStart } : {}),
-      ...(event.windowEnd !== null ? { windowEnd: event.windowEnd } : {}),
-      datePrecision: event.datePrecision,
-      confidence: event.confidence,
-      status: event.status,
-      expectedImpact: event.expectedImpact,
-      sources: event.sources.map((source) => ({
-        url: source.url,
-        title: source.title,
-        publisher: source.publisher,
-        ...(source.publishedAt !== null
-          ? { publishedAt: source.publishedAt }
-          : {}),
-        quote: source.quote,
-        supportsFields: source.supportsFields,
-      })),
-    })),
+    events: research.events.map((event) => {
+      const normalized = normalizeCatalystEventTiming(
+        {
+          title: event.title,
+          summary: clampResearchText(event.summary, MAX_EVENT_SUMMARY_CHARS),
+          whyItMatters: clampResearchText(
+            event.whyItMatters,
+            MAX_EVENT_WHY_CHARS,
+          ),
+          eventType: event.eventType,
+          timingShape: event.timingShape,
+          ...(event.expectedDate !== null
+            ? { expectedDate: event.expectedDate }
+            : {}),
+          ...(event.windowStart !== null
+            ? { windowStart: event.windowStart }
+            : {}),
+          ...(event.windowEnd !== null ? { windowEnd: event.windowEnd } : {}),
+          ...(event.periodKey !== null ? { periodKey: event.periodKey } : {}),
+          datePrecision: event.datePrecision,
+          confidence: event.confidence,
+          status: event.status,
+          expectedImpact: event.expectedImpact,
+          sources: event.sources.map((source) => ({
+            url: source.url,
+            title: source.title,
+            publisher: source.publisher,
+            ...(source.publishedAt !== null
+              ? { publishedAt: source.publishedAt }
+              : {}),
+            quote: source.quote,
+            supportsFields: source.supportsFields,
+          })),
+        },
+        { researchHorizonEnd, researchRunDate },
+      )
+
+      return normalized
+    }),
   }
 }
