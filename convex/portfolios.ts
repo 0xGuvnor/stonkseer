@@ -1,4 +1,4 @@
-import { v } from "convex/values"
+import { ConvexError, v } from "convex/values"
 
 import {
   catalystStatusValidator,
@@ -28,7 +28,7 @@ function validatePortfolioName(name: string) {
   const trimmed = name.trim()
 
   if (trimmed.length < 1 || trimmed.length > 80) {
-    throw new Error("Portfolio name must be between 1 and 80 characters")
+    throw new ConvexError("Portfolio name must be between 1 and 80 characters")
   }
 
   return trimmed
@@ -48,7 +48,13 @@ async function assertPortfolioNameAvailable(
     .first()
 
   if (existing && existing._id !== excludePortfolioId) {
-    throw new Error("You already have a portfolio with this name")
+    const userMessage = "You already have a portfolio with this name"
+    console.error("Portfolio name conflict", {
+      userId,
+      name,
+      existingPortfolioId: existing._id,
+    })
+    throw new ConvexError(userMessage)
   }
 }
 

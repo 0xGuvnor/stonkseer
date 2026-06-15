@@ -11,6 +11,8 @@ import { useState } from "react"
 import { Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
+import { showConvexMutationErrorToast } from "@/lib/convex-mutation-error"
+
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -253,9 +255,7 @@ export function ResearchRunResults({
         })
       }
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not save to portfolio."
-      )
+      showConvexMutationErrorToast(error, "Could not save to portfolio.")
     } finally {
       setIsSaving(false)
     }

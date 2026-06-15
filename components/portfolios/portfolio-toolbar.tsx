@@ -4,6 +4,8 @@ import { Loader2, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
 import { type FormEvent, useState } from "react"
 import { toast } from "sonner"
 
+import { showConvexMutationErrorToast } from "@/lib/convex-mutation-error"
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -85,9 +87,7 @@ export function PortfolioToolbar({
       setNameInput("My Portfolio")
       toast.success("Portfolio created")
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not create portfolio.",
-      )
+      showConvexMutationErrorToast(error, "Could not create portfolio.")
     } finally {
       setIsCreating(false)
     }
@@ -111,9 +111,7 @@ export function PortfolioToolbar({
       setRenameOpen(false)
       toast.success("Portfolio renamed")
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not rename portfolio.",
-      )
+      showConvexMutationErrorToast(error, "Could not rename portfolio.")
     } finally {
       setIsRenaming(false)
     }
@@ -130,9 +128,7 @@ export function PortfolioToolbar({
       setDeleteOpen(false)
       toast.success("Portfolio deleted")
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not delete portfolio.",
-      )
+      showConvexMutationErrorToast(error, "Could not delete portfolio.")
     } finally {
       setIsDeleting(false)
     }
