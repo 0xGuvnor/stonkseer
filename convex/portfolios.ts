@@ -7,7 +7,8 @@ import {
   expectedImpactValidator,
   timingShapeValidator,
 } from "./schema"
-import { mutation, query } from "./_generated/server"
+import type { Id } from "./_generated/dataModel"
+import { mutation, query, type MutationCtx } from "./_generated/server"
 import {
   getCurrentUserOrNull,
   getOrCreateCurrentUser,
@@ -31,6 +32,24 @@ function validatePortfolioName(name: string) {
   }
 
   return trimmed
+}
+
+async function assertPortfolioNameAvailable(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  name: string,
+  excludePortfolioId?: Id<"portfolios">,
+) {
+  const existing = await ctx.db
+    .query("portfolios")
+    .withIndex("by_user_and_name", (q) =>
+      q.eq("userId", userId).eq("name", name),
+    )
+    .first()
+
+  if (existing && existing._id !== excludePortfolioId) {
+    throw new Error("You already have a portfolio with this name")
+  }
 }
 
 const portfolioReturn = v.object({
@@ -147,6 +166,8 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const user = await getOrCreateCurrentUser(ctx)
     const name = validatePortfolioName(args.name)
+
+    await assertPortfolioNameAvailable(ctx, user._id, name)
 
     const now = Date.now()
 
@@ -408,6 +429,13 @@ export const rename = mutation({
   handler: async (ctx, args) => {
     const { portfolio } = await requirePortfolioOwner(ctx, args.portfolioId)
     const name = validatePortfolioName(args.name)
+
+    await assertPortfolioNameAvailable(
+      ctx,
+      portfolio.userId,
+      name,
+      portfolio._id,
+    )
 
     await ctx.db.patch(portfolio._id, {
       name,
