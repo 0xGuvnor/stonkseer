@@ -132,8 +132,8 @@ export function HomeResearchClient() {
           <span className="text-gradient-brand">stonks?</span>
         </h1>
         <p className="mt-4 max-w-md text-base text-pretty text-muted-foreground sm:text-lg">
-          Enter any ticker for AI-researched catalysts over the next 12 months —
-          earnings, product launches, regulatory events, and more.
+          Earnings, launches, and regulatory events that could move a stock
+          over the next 12 months.
         </p>
 
         <Form {...form}>

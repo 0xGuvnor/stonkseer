@@ -15,7 +15,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -106,9 +105,6 @@ export function AppSidebar() {
       {/* ── Nav ────────────────────────────────────────────── */}
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="text-[0.65rem] font-semibold tracking-[0.2em] text-sidebar-foreground/55 uppercase">
-            Navigation
-          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="gap-1.5">
               {APP_NAV.map(({ href, label, icon: Icon }) => {

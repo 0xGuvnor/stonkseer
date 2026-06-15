@@ -118,12 +118,14 @@ export function CatalystEventsTable({
                 </TableCell>
                 <TableCell className="max-w-xl min-w-48 align-top whitespace-normal">
                   {event.summary.trim() ? (
-                    <p className="mb-1.5 text-sm leading-snug text-muted-foreground">
+                    <p className="mb-1.5 text-sm leading-snug">
                       {event.summary}
                     </p>
                   ) : null}
                   {event.whyItMatters.trim() ? (
-                    <p className="text-sm leading-snug">{event.whyItMatters}</p>
+                    <p className="text-sm leading-snug text-muted-foreground">
+                      {event.whyItMatters}
+                    </p>
                   ) : event.summary.trim() ? null : (
                     <span className="text-muted-foreground">—</span>
                   )}

@@ -239,8 +239,6 @@ function SignedInPortfolios({
     )
   }
 
-  const autoOpenCreate = portfolios.length === 0
-
   return (
     <div className={PAGE_SHELL}>
       <header className="space-y-2">
@@ -263,7 +261,6 @@ function SignedInPortfolios({
           onCreatePortfolio={onCreatePortfolio}
           onRenamePortfolio={onRenamePortfolio}
           onDeletePortfolio={onDeletePortfolio}
-          autoOpenCreate={autoOpenCreate}
         />
 
         {!selectedPortfolioId ? (

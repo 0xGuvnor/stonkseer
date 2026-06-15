@@ -34,11 +34,27 @@ export function eventTimingLabel(
   return catalystEventTimingLabel(event, now)
 }
 
+export function isUnknownTimingWithoutQuarter(
+  event: CatalystEventView,
+  now: number = Date.now(),
+): boolean {
+  return (
+    parseSortAnchor(event, now) === null &&
+    eventTimingLabel(event, now) === "Timing unknown"
+  )
+}
+
 export function sortCatalystEventsByAnchor(
   events: CatalystEventView[],
   now: number = Date.now(),
 ) {
   return [...events].sort((a, b) => {
+    const aUnknown = isUnknownTimingWithoutQuarter(a, now)
+    const bUnknown = isUnknownTimingWithoutQuarter(b, now)
+    if (aUnknown !== bUnknown) {
+      return aUnknown ? -1 : 1
+    }
+
     const da = parseSortAnchor(a, now)
     const db = parseSortAnchor(b, now)
     const ta = da ? da.getTime() : Number.POSITIVE_INFINITY
