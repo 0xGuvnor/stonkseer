@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation"
 import { AppBackground } from "@/components/app-background"
 import { AppSidebar } from "@/components/app-sidebar"
 import { MainScrollPane } from "@/components/main-scroll-pane"
-import { Separator } from "@/components/ui/separator"
 import {
   SidebarInset,
   SidebarProvider,
@@ -26,7 +25,6 @@ export function MainShell({ children }: { children: ReactNode }) {
           {/* Mobile-only: blurred, borderless top bar with the sidebar trigger */}
           <div className="glass z-40 flex h-12 shrink-0 items-center gap-2 px-3 md:hidden">
             <SidebarTrigger />
-            <Separator orientation="vertical" className="h-5 self-center" />
             <p className="truncate text-sm font-semibold tracking-tight text-foreground">
               {getMobileHeaderTitle(pathname)}
             </p>
