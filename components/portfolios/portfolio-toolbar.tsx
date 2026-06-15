@@ -217,7 +217,7 @@ export function PortfolioToolbar({
             setNameInput("My Portfolio")
             setCreateOpen(true)
           }}
-          className="bg-gradient-brand w-full text-primary-foreground shadow-sm sm:w-auto"
+          className="bg-gradient-brand w-full cursor-pointer text-primary-foreground shadow-sm sm:w-auto"
         >
           <Plus className="size-4" />
           New portfolio
