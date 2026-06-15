@@ -46,6 +46,12 @@ import {
   runFollowUpSearches,
 } from "../lib/research-followup"
 import { verifyAndFilterEvents } from "../lib/research-grounding"
+import {
+  buildExtractionGatewayProviderOptions,
+  buildGatewayProviderOptions,
+  type ResearchGatewayContext,
+} from "../lib/research-gateway-observability"
+import { RESEARCH_STRATEGY_VERSION } from "../lib/research-strategy"
 import { formatResearchBreadthExtractionBlock } from "../lib/research-themes"
 import {
   isTickerSymbolSyntaxValid,
@@ -1055,6 +1061,7 @@ async function fetchOpenAiProviderResearch(
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
+  gatewayCtx: ResearchGatewayContext,
 ): Promise<ProviderResearchResult> {
   const model = process.env.CATALYST_OPENAI_SEARCH_MODEL
   const exaApiKey = process.env.EXA_API_KEY
@@ -1084,6 +1091,10 @@ async function fetchOpenAiProviderResearch(
   try {
     const result = await generateText({
       model,
+      providerOptions: buildGatewayProviderOptions(
+        gatewayCtx,
+        "openai-exa-search",
+      ),
       system: HOSTED_SEARCH_SYSTEM_PROMPT,
       tools: {
         webSearch: webSearch({
@@ -1194,6 +1205,7 @@ async function fetchAnthropicProviderResearch(
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
+  gatewayCtx: ResearchGatewayContext,
 ): Promise<ProviderResearchResult> {
   const model = process.env.CATALYST_ANTHROPIC_SEARCH_MODEL
   const prompt = buildCatalystReportPrompt(symbol, companyName, industry, now)
@@ -1214,6 +1226,10 @@ async function fetchAnthropicProviderResearch(
   try {
     const result = await generateText({
       model,
+      providerOptions: buildGatewayProviderOptions(
+        gatewayCtx,
+        "anthropic-search",
+      ),
       system: HOSTED_SEARCH_SYSTEM_PROMPT,
       tools: {
         web_search: anthropic.tools.webSearch_20250305({
@@ -1325,6 +1341,7 @@ async function fetchXaiProviderResearch(
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
+  gatewayCtx: ResearchGatewayContext,
 ): Promise<ProviderResearchResult> {
   const model = process.env.CATALYST_XAI_SEARCH_MODEL
   const prompt = buildCatalystReportPrompt(symbol, companyName, industry, now)
@@ -1345,6 +1362,7 @@ async function fetchXaiProviderResearch(
   try {
     const result = await generateText({
       model,
+      providerOptions: buildGatewayProviderOptions(gatewayCtx, "xai-search"),
       system: HOSTED_SEARCH_SYSTEM_PROMPT,
       tools: {
         x_search: xai.tools.xSearch({
@@ -1446,6 +1464,7 @@ async function fetchGeminiProviderResearch(
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
+  gatewayCtx: ResearchGatewayContext,
 ): Promise<ProviderResearchResult> {
   const model = process.env.CATALYST_GEMINI_SEARCH_MODEL
   const prompt = buildCatalystReportPrompt(symbol, companyName, industry, now)
@@ -1466,6 +1485,7 @@ async function fetchGeminiProviderResearch(
   try {
     const result = await generateText({
       model,
+      providerOptions: buildGatewayProviderOptions(gatewayCtx, "gemini-search"),
       system: HOSTED_SEARCH_SYSTEM_PROMPT,
       tools: {
         google_search: google.tools.googleSearch({}),
@@ -1606,6 +1626,7 @@ async function fetchHostedProviderResearch(
   companyName: string | undefined,
   industry: string | undefined,
   now: number,
+  gatewayCtx: ResearchGatewayContext,
 ): Promise<{
   providers: ProviderResearchResult[]
   seenUrls: Set<string>
@@ -1626,6 +1647,7 @@ async function fetchHostedProviderResearch(
             companyName,
             industry,
             now,
+            gatewayCtx,
           )
         case "openai":
           return fetchOpenAiProviderResearch(
@@ -1633,6 +1655,7 @@ async function fetchHostedProviderResearch(
             companyName,
             industry,
             now,
+            gatewayCtx,
           )
         case "anthropic":
           return fetchAnthropicProviderResearch(
@@ -1640,6 +1663,7 @@ async function fetchHostedProviderResearch(
             companyName,
             industry,
             now,
+            gatewayCtx,
           )
         case "xai":
           return fetchXaiProviderResearch(
@@ -1647,6 +1671,7 @@ async function fetchHostedProviderResearch(
             companyName,
             industry,
             now,
+            gatewayCtx,
           )
       }
     })
@@ -1673,6 +1698,7 @@ async function runCatalystFollowUpPass(
   companyName: string | undefined,
   reports: string[],
   now: number,
+  gatewayCtx: ResearchGatewayContext,
 ): Promise<{
   queries: string[]
   snippets: SourceSnippet[]
@@ -1691,6 +1717,10 @@ async function runCatalystFollowUpPass(
   try {
     const result = await generateText({
       model,
+      providerOptions: buildGatewayProviderOptions(
+        gatewayCtx,
+        "followup-queries",
+      ),
       prompt: buildFollowUpQueryPrompt(
         symbol,
         companyName,
@@ -1914,7 +1944,8 @@ async function buildAiEvents(
   companyContext: string,
   providerReports: Array<{ provider: string; report: string }>,
   snippets: SourceSnippet[],
-  now: number
+  now: number,
+  gatewayCtx: ResearchGatewayContext,
 ): Promise<CatalystResearch | null> {
   const model = process.env.AI_GATEWAY_MODEL
 
@@ -1955,6 +1986,7 @@ async function buildAiEvents(
   try {
     const { output } = await generateText({
       model,
+      providerOptions: buildExtractionGatewayProviderOptions(gatewayCtx),
       output: Output.object({
         schema: catalystResearchAiSchema,
       }),
@@ -2071,6 +2103,15 @@ export const runResearch = internalAction({
       const tickerValidation = await validateTicker(ctx, run.symbol, researchStartedAt)
       assertTickerExists(tickerValidation)
 
+      const gatewayCtx: ResearchGatewayContext = {
+        runId: args.runId,
+        symbol: run.symbol,
+        source: run.source,
+        userId: run.userId,
+        strategyVersion:
+          run.researchStrategyVersion ?? RESEARCH_STRATEGY_VERSION,
+      }
+
       const finnhub = await fetchFinnhubMarketContext(run.symbol, researchStartedAt)
       const companyNameForSearch =
         finnhub.companyName ?? tickerValidation.companyName
@@ -2081,6 +2122,7 @@ export const runResearch = internalAction({
         companyNameForSearch,
         finnhub.finnhubIndustry,
         researchStartedAt,
+        gatewayCtx,
       )
       const providerReports = hostedResearch.providers
         .filter((provider) => provider.report.length > 0)
@@ -2094,6 +2136,7 @@ export const runResearch = internalAction({
         companyNameForSearch,
         providerReports.map((entry) => entry.report),
         researchStartedAt,
+        gatewayCtx,
       )
 
       const merged = dedupeSnippetsByUrl(
@@ -2122,7 +2165,8 @@ export const runResearch = internalAction({
         companyContext,
         providerReports,
         evidenceSnippets,
-        researchStartedAt
+        researchStartedAt,
+        gatewayCtx,
       )
 
       let rawEvents = aiResearch?.events ?? []
