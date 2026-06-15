@@ -187,4 +187,20 @@
       0 0 0 1px color-mix(in oklch, var(--primary) 14%, transparent),
       0 24px 70px -34px var(--glow-primary);
   }
+
+  @keyframes typewriter-cursor-blink {
+    0%,
+    49% {
+      opacity: 1;
+    }
+    50%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  .animate-typewriter-cursor {
+    animation: typewriter-cursor-blink 1s step-end infinite;
+    -webkit-text-fill-color: currentColor;
+  }
 }

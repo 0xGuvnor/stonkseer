@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation"
 import { useRef, useState } from "react"
 import { useForm } from "react-hook-form"
 
+import { HomeTypewriterSubheading } from "@/components/home-typewriter-subheading"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -131,10 +132,7 @@ export function HomeResearchClient() {
           What&apos;s moving your{" "}
           <span className="text-gradient-brand">stonks?</span>
         </h1>
-        <p className="mt-4 max-w-md text-base text-pretty text-muted-foreground sm:text-lg">
-          Earnings, launches, and regulatory events that could move a stock
-          over the next 12 months.
-        </p>
+        <HomeTypewriterSubheading />
 
         <Form {...form}>
           <form
