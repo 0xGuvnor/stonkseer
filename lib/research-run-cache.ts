@@ -22,7 +22,16 @@ export function isResearchRunCacheFresh(
   now: number,
   strategyVersion: string,
   ttlMs: number = RESEARCH_CACHE_TTL_MS,
+  cacheInvalidatedAt?: number,
 ): boolean {
+  if (
+    cacheInvalidatedAt !== undefined &&
+    run.completedAt !== undefined &&
+    run.completedAt <= cacheInvalidatedAt
+  ) {
+    return false
+  }
+
   return (
     run.status === "completed" &&
     run.completedAt !== undefined &&
@@ -73,6 +82,7 @@ export function selectUsableCacheSourceRunId(
   now: number,
   strategyVersion: string,
   ttlMs: number = RESEARCH_CACHE_TTL_MS,
+  cacheInvalidatedAt?: number,
 ): string | null {
   for (const candidate of freshCandidates) {
     const canonicalRunId = resolveCanonicalCacheSourceRunId(
@@ -90,7 +100,13 @@ export function selectUsableCacheSourceRunId(
     }
 
     if (
-      !isResearchRunCacheFresh(canonicalRun, now, strategyVersion, ttlMs) ||
+      !isResearchRunCacheFresh(
+        canonicalRun,
+        now,
+        strategyVersion,
+        ttlMs,
+        cacheInvalidatedAt,
+      ) ||
       !runIdsWithEvents.has(canonicalRunId)
     ) {
       continue

@@ -2,7 +2,7 @@ import { v } from "convex/values"
 
 import { internal } from "./_generated/api"
 import type { Id } from "./_generated/dataModel"
-import { internalMutation, query } from "./_generated/server"
+import { internalMutation, mutation, query } from "./_generated/server"
 import type { MutationCtx } from "./_generated/server"
 import {
   catalystStatusValidator,
@@ -16,6 +16,7 @@ import {
   getCurrentUser,
   getCurrentUserOrNull,
   getOrCreateCurrentUser,
+  requireAdmin,
 } from "./lib/auth"
 import { lookupCompanyNameForSymbol } from "./lib/companyName"
 import {
@@ -172,6 +173,12 @@ async function getUsableFreshCompletedRunId(
   symbol: string,
   now: number,
 ): Promise<Id<"researchRuns"> | null> {
+  const stock = await ctx.db
+    .query("stocks")
+    .withIndex("by_symbol", (q) => q.eq("symbol", symbol))
+    .unique()
+  const cacheInvalidatedAt = stock?.researchCacheInvalidatedAt
+
   const completedRuns = await ctx.db
     .query("researchRuns")
     .withIndex("by_symbol_and_status", (q) =>
@@ -190,6 +197,7 @@ async function getUsableFreshCompletedRunId(
         now,
         RESEARCH_STRATEGY_VERSION,
         RESEARCH_CACHE_TTL_MS,
+        cacheInvalidatedAt,
       ),
     ),
   ).map((run) => toResearchRunCacheCandidate(run))
@@ -217,6 +225,7 @@ async function getUsableFreshCompletedRunId(
     now,
     RESEARCH_STRATEGY_VERSION,
     RESEARCH_CACHE_TTL_MS,
+    cacheInvalidatedAt,
   )
 
   return canonicalRunId ? (canonicalRunId as Id<"researchRuns">) : null
@@ -462,5 +471,43 @@ export const listUpcomingForPortfolio = query({
     }
 
     return eventsWithSources
+  },
+})
+
+export const markSymbolResearchStale = mutation({
+  args: {
+    symbol: symbolValidator,
+  },
+  returns: v.object({
+    symbol: v.string(),
+    invalidatedAt: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx)
+
+    const symbol = normalizeTickerSymbol(args.symbol)
+    assertValidSymbol(symbol)
+
+    const now = Date.now()
+    const stock = await ctx.db
+      .query("stocks")
+      .withIndex("by_symbol", (q) => q.eq("symbol", symbol))
+      .unique()
+
+    if (stock) {
+      await ctx.db.patch(stock._id, {
+        researchCacheInvalidatedAt: now,
+        updatedAt: now,
+      })
+    } else {
+      await ctx.db.insert("stocks", {
+        symbol,
+        researchCacheInvalidatedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+
+    return { symbol, invalidatedAt: now }
   },
 })

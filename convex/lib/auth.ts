@@ -1,3 +1,4 @@
+import { resolveUserRole } from "../../lib/admin"
 import type { Doc, Id } from "../_generated/dataModel"
 import type { MutationCtx, QueryCtx } from "../_generated/server"
 
@@ -64,10 +65,12 @@ export async function getOrCreateCurrentUser(
   const profileName = profileField(profile?.name, 120)
 
   if (existingUser) {
+    const email = identity.email ?? profileEmail ?? existingUser.email
     const userFields = {
-      email: identity.email ?? profileEmail ?? existingUser.email,
+      email,
       name: identity.name ?? profileName ?? existingUser.name,
       imageUrl: identity.pictureUrl ?? profileImageUrl ?? existingUser.imageUrl,
+      role: resolveUserRole(email),
       updatedAt: now,
     }
 
@@ -79,11 +82,12 @@ export async function getOrCreateCurrentUser(
     }
   }
 
+  const email = identity.email ?? profileEmail ?? ""
   const userFields = {
-    email: identity.email ?? profileEmail ?? "",
+    email,
     name: identity.name ?? profileName ?? "Stonkseer user",
     imageUrl: identity.pictureUrl ?? profileImageUrl,
-    role: "user" as const,
+    role: resolveUserRole(email),
     updatedAt: now,
   }
 
@@ -96,6 +100,16 @@ export async function getOrCreateCurrentUser(
 
   if (!user) {
     throw new Error("Unable to create user")
+  }
+
+  return user
+}
+
+export async function requireAdmin(ctx: AuthCtx): Promise<Doc<"users">> {
+  const user = await getCurrentUser(ctx)
+
+  if (user.role !== "admin") {
+    throw new Error("Admin access required")
   }
 
   return user

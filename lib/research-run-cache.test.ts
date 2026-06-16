@@ -66,6 +66,30 @@ describe("isResearchRunCacheFresh", () => {
       ),
     ).toBe(false)
   })
+
+  test("rejects runs invalidated after completion", () => {
+    expect(
+      isResearchRunCacheFresh(
+        run("run1", { completedAt: fixtureNow - DAY_MS }),
+        fixtureNow,
+        RESEARCH_STRATEGY_VERSION,
+        RESEARCH_CACHE_TTL_MS,
+        fixtureNow - 12 * 60 * 60 * 1000,
+      ),
+    ).toBe(false)
+  })
+
+  test("accepts runs completed after invalidation timestamp", () => {
+    expect(
+      isResearchRunCacheFresh(
+        run("run1", { completedAt: fixtureNow - 12 * 60 * 60 * 1000 }),
+        fixtureNow,
+        RESEARCH_STRATEGY_VERSION,
+        RESEARCH_CACHE_TTL_MS,
+        fixtureNow - DAY_MS,
+      ),
+    ).toBe(true)
+  })
 })
 
 describe("resolveCanonicalCacheSourceRunId", () => {

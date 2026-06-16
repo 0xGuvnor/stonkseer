@@ -79,6 +79,7 @@ export default defineSchema({
     companyName: v.optional(v.string()),
     exchange: v.optional(v.string()),
     lastRefreshedAt: v.optional(v.number()),
+    researchCacheInvalidatedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

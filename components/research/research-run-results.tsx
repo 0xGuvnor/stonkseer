@@ -8,10 +8,11 @@ import {
 } from "convex/react"
 import Link from "next/link"
 import { useState } from "react"
-import { Loader2, Sparkles } from "lucide-react"
+import { Briefcase, Loader2, RefreshCw, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
 import { showConvexMutationErrorToast } from "@/lib/convex-mutation-error"
+import { isAdminUser } from "@/lib/admin"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -160,6 +161,7 @@ export function ResearchRunResults({
   const [portfolioName, setPortfolioName] = useState("My Portfolio")
   const [portfolioSelection, setPortfolioSelection] = useState<string>("")
   const [isSaving, setIsSaving] = useState(false)
+  const [isMarkingStale, setIsMarkingStale] = useState(false)
 
   const { isLoaded: clerkLoaded, isSignedIn } = useAuth()
   const { isAuthenticated } = useConvexAuth()
@@ -167,6 +169,7 @@ export function ResearchRunResults({
   const saveResearchToPortfolio = useMutation(
     api.portfolios.saveResearchToPortfolio
   )
+  const markSymbolResearchStale = useMutation(api.research.markSymbolResearchStale)
 
   const me = useQuery(api.users.current, isAuthenticated ? {} : "skip")
 
@@ -261,6 +264,22 @@ export function ResearchRunResults({
     }
   }
 
+  async function handleMarkStale() {
+    if (!results) {
+      return
+    }
+
+    setIsMarkingStale(true)
+    try {
+      await markSymbolResearchStale({ symbol: results.run.symbol })
+      toast.success("Marked stale — next search will run fresh research.")
+    } catch (error) {
+      showConvexMutationErrorToast(error, "Could not mark research as stale.")
+    } finally {
+      setIsMarkingStale(false)
+    }
+  }
+
   if (!shouldLoadResults) {
     return (
       <section className={RESEARCH_ROUTE_CENTER_SHELL}>
@@ -332,16 +351,35 @@ export function ResearchRunResults({
           />
         </div>
         {isCompletedWithEvents ? (
-          <Button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="bg-gradient-brand w-full cursor-pointer text-primary-foreground shadow-sm transition-transform hover:scale-[1.02] hover:brightness-105 sm:w-auto"
-          >
-            {isSaving ? (
-              <Loader2 className="size-4 animate-spin" />
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            {isAdminUser(me) ? (
+              <Button
+                variant="outline"
+                onClick={handleMarkStale}
+                disabled={isMarkingStale}
+                className="w-full cursor-pointer sm:w-auto"
+              >
+                {isMarkingStale ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <RefreshCw className="size-4" aria-hidden />
+                )}
+                Mark stale
+              </Button>
             ) : null}
-            Save to portfolio
-          </Button>
+            <Button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="bg-gradient-brand w-full cursor-pointer text-primary-foreground shadow-sm transition-transform hover:scale-[1.02] hover:brightness-105 sm:w-auto"
+            >
+              {isSaving ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Briefcase className="size-4" aria-hidden />
+              )}
+              Save to portfolio
+            </Button>
+          </div>
         ) : null}
       </header>
 
