@@ -32,7 +32,7 @@ export function ThemeToggle() {
         }
         tooltip={mounted ? (isDark ? "Light mode" : "Dark mode") : "Theme"}
       >
-        {mounted ? isDark ? <Sun /> : <Moon /> : <Sun />}
+        {mounted ? isDark ? <Moon /> : <Sun /> : <Sun />}
         <span>{mounted ? (isDark ? "Light mode" : "Dark mode") : "Theme"}</span>
       </SidebarMenuButton>
     )
@@ -43,9 +43,9 @@ export function ThemeToggle() {
     <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-sidebar-foreground">
       {mounted ? (
         isDark ? (
-          <Sun className="size-4 shrink-0" />
-        ) : (
           <Moon className="size-4 shrink-0" />
+        ) : (
+          <Sun className="size-4 shrink-0" />
         )
       ) : (
         <Sun className="size-4 shrink-0" />
