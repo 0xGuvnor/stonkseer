@@ -50,7 +50,7 @@ API.
    `ctx.runQuery`, `ctx.runMutation`, or `ctx.runAction`.
 9. If React clients, HTTP callers, or public APIs need access, create wrapper
    functions in the app instead of exposing component functions directly.
-10. Run `npx convex dev` and fix codegen, type, or boundary issues before
+10. Run `bunx convex dev` and fix codegen, type, or boundary issues before
     finishing.
 
 ## Choose the Shape
@@ -73,7 +73,7 @@ Unless the user explicitly wants an npm package, default to a local component:
 - Put it under `convex/components/<componentName>/`
 - Define it with `defineComponent(...)` in its own `convex.config.ts`
 - Install it from the app's `convex/convex.config.ts` with `app.use(...)`
-- Let `npx convex dev` generate the component's own `_generated/` files
+- Let `bunx convex dev` generate the component's own `_generated/` files
 
 ## Component Skeleton
 
@@ -287,9 +287,9 @@ class-based client wrappers, see `references/advanced-patterns.md`.
 
 Try validation in this order:
 
-1. `npx convex codegen --component-dir convex/components/<name>`
-2. `npx convex codegen`
-3. `npx convex dev`
+1. `bunx convex codegen --component-dir convex/components/<name>`
+2. `bunx convex codegen`
+3. `bunx convex dev`
 
 Important:
 
@@ -322,4 +322,4 @@ Official docs:
 - [ ] Auth, env access, and HTTP routes stay in the app
 - [ ] Parent app IDs cross the boundary as `v.string()`
 - [ ] Public functions have `args` and `returns` validators
-- [ ] Ran `npx convex dev` and fixed codegen or type issues
+- [ ] Ran `bunx convex dev` and fixed codegen or type issues

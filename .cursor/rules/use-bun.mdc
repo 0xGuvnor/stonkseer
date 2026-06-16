@@ -1,0 +1,29 @@
+---
+description: Use Bun and bunx for package management and CLI tools in this repo
+alwaysApply: true
+globs: ["**/*"]
+---
+
+# Use Bun (not npm/npx)
+
+This repo uses **Bun** as its package manager (`packageManager: bun@…` in `package.json`; `bun.lock` only).
+
+## Commands
+
+| Do | Not |
+|----|-----|
+| `bun install` | `npm install`, `npm ci` |
+| `bun run dev`, `bun run test`, `bun run typecheck` | `npm run …` |
+| `bunx shadcn@latest add …` | `npx shadcn@latest …` |
+| `bunx convex dev` | `npx convex dev` |
+| `bunx convex deploy` | `npx convex deploy` |
+| `bunx convex env set KEY value` | `npx convex env set …` |
+| `bunx convex run …` | `npx convex run …` |
+| `bunx convex ai-files install` | `npx convex ai-files install` |
+
+## Convex
+
+- **Development:** `bunx convex dev` — watches and syncs to the dev deployment.
+- **Production:** `bunx convex deploy` — deploy backend only; never use during local dev.
+
+Do not add `package-lock.json`.

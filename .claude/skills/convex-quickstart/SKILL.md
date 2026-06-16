@@ -1,8 +1,8 @@
 ---
 name: convex-quickstart
 description:
-  Creates or adds Convex to an app. Use for new Convex projects, npm create
-  convex@latest, frontend setup, env vars, or the first npx convex dev run.
+  Creates or adds Convex to an app. Use for new Convex projects, bun create
+  convex@latest, frontend setup, env vars, or the first bunx convex dev run.
 ---
 
 # Convex Quickstart
@@ -25,15 +25,15 @@ Set up a working Convex project as fast as possible.
 ## Workflow
 
 1. Determine the starting point: new project or existing app
-2. If new project, pick a template and scaffold with `npm create convex@latest`
+2. If new project, pick a template and scaffold with `bun create convex@latest`
 3. If existing app, install `convex` and wire up the provider
-4. Run `npx convex dev --once` to provision a local anonymous deployment, push
+4. Run `bunx convex dev --once` to provision a local anonymous deployment, push
    the current `convex/` code, typecheck it, and regenerate types — all in one
    shot, exiting cleanly. The output tells the agent whether the schema and
    functions are valid.
-5. Ask the user (or, for cloud agents, start in the background) `npm run dev` —
+5. Ask the user (or, for cloud agents, start in the background) `bun run dev` —
    Convex templates wire the watcher and the frontend into a single command. If
-   the project has no combined dev script, use `npx convex dev` for the watcher
+   the project has no combined dev script, use `bunx convex dev` for the watcher
    and run the frontend separately.
 6. Verify the setup works
 
@@ -60,8 +60,8 @@ simple apps or `nextjs-shadcn` for apps that need SSR or API routes.
 You can also use any GitHub repo as a template:
 
 ```bash
-npm create convex@latest my-app -- -t owner/repo
-npm create convex@latest my-app -- -t owner/repo#branch
+bun create convex@latest my-app -- -t owner/repo
+bun create convex@latest my-app -- -t owner/repo#branch
 ```
 
 ### Scaffold the project
@@ -69,19 +69,19 @@ npm create convex@latest my-app -- -t owner/repo#branch
 Always pass the project name and template flag to avoid interactive prompts:
 
 ```bash
-npm create convex@latest my-app -- -t react-vite-shadcn
+bun create convex@latest my-app -- -t react-vite-shadcn
 cd my-app
-npm install
+bun install
 ```
 
-The scaffolding tool creates files but does not run `npm install`, so you must
+The scaffolding tool creates files but does not run `bun install`, so you must
 run it yourself.
 
 To scaffold in the current directory (if it is empty):
 
 ```bash
-npm create convex@latest . -- -t react-vite-shadcn
-npm install
+bun create convex@latest . -- -t react-vite-shadcn
+bun install
 ```
 
 ### Provision the deployment and push code
@@ -89,7 +89,7 @@ npm install
 Run this yourself — it is a one-shot command that exits cleanly:
 
 ```bash
-npx convex dev --once
+bunx convex dev --once
 ```
 
 In a non-TTY environment (which is true for almost every agent run), this:
@@ -107,27 +107,27 @@ To be explicit (recommended), set `CONVEX_AGENT_MODE=anonymous` so the behavior
 does not depend on TTY detection:
 
 ```bash
-CONVEX_AGENT_MODE=anonymous npx convex dev --once
+CONVEX_AGENT_MODE=anonymous bunx convex dev --once
 ```
 
 The deployment lives under `~/.convex/` and persists across runs. Re-running
 `convex dev --once` after editing `convex/` files is the agent's main feedback
-loop while the user-launched `npm run dev` is not in use.
+loop while the user-launched `bun run dev` is not in use.
 
 If the template's `package.json` defines a `predev` script (Convex Auth
-templates and similar do), `npm run predev` runs `convex init` plus any one-time
+templates and similar do), `bun run predev` runs `convex init` plus any one-time
 setup (e.g. minting auth keys). Use it _in addition to_ `convex dev --once` when
 present — `predev` handles the one-time setup, `convex dev --once` pushes and
 validates the code.
 
 ### Start the dev loop
 
-In most Convex templates, `npm run dev` runs both the Convex watcher and the
+In most Convex templates, `bun run dev` runs both the Convex watcher and the
 frontend dev server together (typically `convex dev --start 'vite --open'` or
 the Next.js equivalent). That is what the user should run.
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 If the project does not have a combined `dev` script — e.g. the `bare` template,
@@ -135,10 +135,10 @@ or an existing app where you haven't wired the frontend dev server into Convex's
 `--start` flag — the user can run the Convex watcher directly:
 
 ```bash
-npx convex dev
+bunx convex dev
 ```
 
-`npx convex dev` is the same long-running watcher `npm run dev` invokes under
+`bunx convex dev` is the same long-running watcher `bun run dev` invokes under
 the hood; it just doesn't start the frontend. Use it when there is no frontend,
 or when the user prefers to run the frontend in a separate terminal.
 
@@ -146,10 +146,10 @@ Either way, the agent should not invoke the watcher in the foreground because it
 does not exit. Two options:
 
 - **Local development (user is at the keyboard):** ask the user to run
-  `npm run dev` (or `npx convex dev`) in a terminal. The deployment provisioned
+  `bun run dev` (or `bunx convex dev`) in a terminal. The deployment provisioned
   by `convex dev --once` above is already selected, so the watcher picks up
   immediately with no prompts.
-- **Cloud or headless agents:** start `npm run dev` (or `npx convex dev`) in the
+- **Cloud or headless agents:** start `bun run dev` (or `bunx convex dev`) in the
   background.
 
 Vite apps serve on `http://localhost:5173`, Next.js on `http://localhost:3000`.
@@ -185,17 +185,17 @@ the backend.
 ### Install
 
 ```bash
-npm install convex
+bun install convex
 ```
 
 ### Provision and push
 
-Run `npx convex dev --once` yourself to provision a local anonymous deployment,
+Run `bunx convex dev --once` yourself to provision a local anonymous deployment,
 write `.env.local`, generate types, push the current `convex/` code, and
 typecheck it. This is one-shot and exits:
 
 ```bash
-npx convex dev --once
+bunx convex dev --once
 ```
 
 The output tells you whether the schema and functions are valid — use it as your
@@ -204,11 +204,11 @@ feedback loop while iterating.
 Then ask the user to start the watcher (or, for cloud/headless agents, start it
 in the background). You have two options:
 
-- **Wire Convex into `npm run dev`** — change the existing app's `dev` script to
+- **Wire Convex into `bun run dev`** — change the existing app's `dev` script to
   `convex dev --start '<existing dev command>'`. That's the standard pattern
-  Convex templates use; the user then runs a single `npm run dev` to start both.
-- **Run them separately** — leave `npm run dev` for the frontend and tell the
-  user to run `npx convex dev` in a second terminal for the Convex watcher.
+  Convex templates use; the user then runs a single `bun run dev` to start both.
+- **Run them separately** — leave `bun run dev` for the frontend and tell the
+  user to run `bunx convex dev` in a second terminal for the Convex watcher.
 
 See "Start the dev loop" above for why the agent should not run the watcher in
 the foreground.
@@ -313,17 +313,17 @@ The env var name depends on the framework:
 | Remix        | `CONVEX_URL`             |
 | React Native | `EXPO_PUBLIC_CONVEX_URL` |
 
-`npx convex dev` writes the correct variable to `.env.local` automatically.
+`bunx convex dev` writes the correct variable to `.env.local` automatically.
 
 ## Agent Mode
 
 `CONVEX_AGENT_MODE=anonymous` forces an unauthenticated local backend. It is
-already the implicit default for any non-TTY run of `npx convex init` or
-`npx convex dev`, but set it explicitly so the behavior does not depend on TTY
+already the implicit default for any non-TTY run of `bunx convex init` or
+`bunx convex dev`, but set it explicitly so the behavior does not depend on TTY
 detection:
 
 ```bash
-CONVEX_AGENT_MODE=anonymous npx convex dev --once
+CONVEX_AGENT_MODE=anonymous bunx convex dev --once
 ```
 
 Use it for:
@@ -334,19 +334,19 @@ Use it for:
   dev deployment.
 
 The resulting backend runs on `127.0.0.1` and is not associated with any team or
-project until the user later claims it via `npx convex login` and the
-`npx convex deployment` commands.
+project until the user later claims it via `bunx convex login` and the
+`bunx convex deployment` commands.
 
 ## Verify the Setup
 
 After setup, confirm everything is working:
 
-1. `npx convex dev --once` exited without errors (deployment provisioned, code
+1. `bunx convex dev --once` exited without errors (deployment provisioned, code
    pushed, schema validated, typecheck clean)
 2. The `convex/_generated/` directory exists and has `api.ts` and `server.ts`
 3. `.env.local` contains a `CONVEX_DEPLOYMENT` value and the framework's
    `*_CONVEX_URL` variable
-4. (If applicable) `npm run dev` (or `npx convex dev` for the watcher alone) is
+4. (If applicable) `bun run dev` (or `bunx convex dev` for the watcher alone) is
    running without errors in another terminal or in the background
 
 ## Writing Your First Function
@@ -413,13 +413,13 @@ function Tasks() {
 
 ## Development vs Production
 
-Always use `npx convex dev` during development. It runs against your personal
+Always use `bunx convex dev` during development. It runs against your personal
 dev deployment and syncs code on save.
 
 When ready to ship, deploy to production:
 
 ```bash
-npx convex deploy
+bunx convex deploy
 ```
 
 This pushes to the production deployment, which is separate from dev. Do not use
@@ -439,12 +439,12 @@ This pushes to the production deployment, which is separate from dev. Do not use
 ## Checklist
 
 - [ ] Determined starting point: new project or existing app
-- [ ] If new project: scaffolded with `npm create convex@latest` using
+- [ ] If new project: scaffolded with `bun create convex@latest` using
       appropriate template
 - [ ] If existing app: installed `convex` and wired up the provider
-- [ ] Agent ran `npx convex dev --once`: deployment provisioned, code pushed,
+- [ ] Agent ran `bunx convex dev --once`: deployment provisioned, code pushed,
       typecheck clean
-- [ ] `npm run dev` (or `npx convex dev` for the watcher alone) is running —
+- [ ] `bun run dev` (or `bunx convex dev` for the watcher alone) is running —
       user-launched terminal, or background for cloud agents
 - [ ] `convex/_generated/` directory exists with types
 - [ ] `.env.local` has the deployment URL

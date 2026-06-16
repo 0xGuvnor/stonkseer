@@ -14,7 +14,7 @@ at a time.
 ## When to Use
 
 - A Convex page or feature feels slow or expensive
-- `npx convex insights --details` reports high bytes read, documents read, or
+- `bunx convex insights --details` reports high bytes read, documents read, or
   OCC conflicts
 - Low-freshness read paths are using reactivity where point-in-time reads would
   do
@@ -46,10 +46,10 @@ Start with the strongest signal available:
 
 1. If deployment Health insights are already available from the user or the
    current context, treat them as a first-class source of performance signals.
-2. If CLI insights are available, run `npx convex insights --details`. Use
+2. If CLI insights are available, run `bunx convex insights --details`. Use
    `--prod`, `--preview-name`, or `--deployment-name` when needed.
    - If the local repo's Convex CLI is too old to support `insights`, try
-     `npx -y convex@latest insights --details` before giving up.
+     `bunx convex@latest insights --details` before giving up.
 3. If the repo already uses `convex-doctor`, you may treat its findings as
    hints. Do not require it, and do not treat it as the source of truth.
 4. If runtime signals are unavailable, audit from code anyway, but keep the

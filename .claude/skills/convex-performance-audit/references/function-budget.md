@@ -33,7 +33,7 @@ that page for the latest numbers.
 - "Transaction too large" or read/write set size errors
 - Slow queries that read many documents
 - Client receiving large payloads that slow down page load
-- `npx convex insights --details` showing high bytes read
+- `bunx convex insights --details` showing high bytes read
 
 ## Common Causes
 
@@ -246,7 +246,7 @@ export const processItems = action({
 ## Verification
 
 1. No function execution or transaction size errors
-2. `npx convex insights --details` shows reduced bytes read
+2. `bunx convex insights --details` shows reduced bytes read
 3. Large mutations are batched and self-scheduling
 4. Client payloads are reasonably sized for the UI they serve
 5. `ctx.runQuery`/`ctx.runMutation` in queries and mutations replaced with

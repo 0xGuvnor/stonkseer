@@ -11,7 +11,7 @@ across multiple apps.
 
 ## Default Approach
 
-- Prefer starting from `npx create-convex@latest --component` when possible
+- Prefer starting from `bunx create-convex@latest --component` when possible
 - Keep the official authoring docs as the source of truth for package layout and
   exports
 - Validate the bundled package through an example app, not just the source files
@@ -23,9 +23,9 @@ the example app tries to consume it.
 
 Recommended order:
 
-1. `npx convex codegen --component-dir ./path/to/component`
+1. `bunx convex codegen --component-dir ./path/to/component`
 2. Run the package build command
-3. Run `npx convex dev --typecheck-components` in the example app
+3. Run `bunx convex dev --typecheck-components` in the example app
 
 Do not assume normal app codegen is enough for packaged component workflows.
 

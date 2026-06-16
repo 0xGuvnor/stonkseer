@@ -208,7 +208,7 @@ export const backfillSmallTable = internalMutation({
 ```
 
 ```bash
-npx convex run migrations:backfillSmallTable
+bunx convex run migrations:backfillSmallTable
 ```
 
 Only use `.collect()` when you are certain the table is small. For anything
@@ -239,5 +239,5 @@ export const verifyMigration = query({
 Or use the component's built-in status monitoring:
 
 ```bash
-npx convex run --component migrations lib:getStatus --watch
+bunx convex run --component migrations lib:getStatus --watch
 ```

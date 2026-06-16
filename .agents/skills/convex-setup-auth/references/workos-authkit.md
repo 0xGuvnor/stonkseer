@@ -74,10 +74,10 @@ and write local env vars such as `VITE_WORKOS_CLIENT_ID` and
    in use
 3. Make sure the dev `redirectUris`, `appHomepageUrl`, `corsOrigins`, and local
    redirect env vars match the app's actual local port
-4. For a managed WorkOS team, run `npx convex dev` and follow the interactive
+4. For a managed WorkOS team, run `bunx convex dev` and follow the interactive
    onboarding flow
 5. For an existing WorkOS team, get `WORKOS_CLIENT_ID` and `WORKOS_API_KEY` from
-   the WorkOS dashboard and set them with `npx convex env set`
+   the WorkOS dashboard and set them with `bunx convex env set`
 6. Create or update `convex/auth.config.ts` for WorkOS JWT validation
 7. Run the normal Convex dev or deploy flow so backend config is synced
 8. Wire the WorkOS client provider in the app
@@ -105,7 +105,7 @@ and write local env vars such as `VITE_WORKOS_CLIENT_ID` and
   URI, homepage URL, CORS configuration, and local env var generation.
 - If the frontend starts on a different port than the one in `convex.json`, the
   hosted WorkOS sign-in flow will point to the wrong callback URL. Update
-  `convex.json`, update the local redirect env var, and run `npx convex dev`
+  `convex.json`, update the local redirect env var, and run `bunx convex dev`
   again.
 - Vite can fall off `5173` if other apps are already running. Do not assume the
   default port still matches the generated AuthKit config.

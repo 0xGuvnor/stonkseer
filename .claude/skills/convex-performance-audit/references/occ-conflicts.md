@@ -15,7 +15,7 @@ contention means wasted work and increased latency.
 - OCC conflict errors in deployment logs or health page
 - Mutations retrying multiple times before succeeding
 - User-visible latency spikes on write-heavy pages
-- `npx convex insights --details` showing high conflict rates
+- `bunx convex insights --details` showing high conflict rates
 
 ## Common Causes
 
