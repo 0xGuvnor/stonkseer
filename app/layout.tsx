@@ -3,6 +3,7 @@ import { ClerkProvider } from "@clerk/nextjs"
 
 import "./globals.css"
 import { AppProviders } from "@/components/providers/app-providers"
+import { clerkAppearance } from "@/lib/clerk-appearance"
 import { cn } from "@/lib/utils"
 
 const merriweatherHeading = Merriweather({
@@ -35,7 +36,7 @@ export default function RootLayout({
       )}
     >
       <body>
-        <ClerkProvider>
+        <ClerkProvider appearance={clerkAppearance}>
           <AppProviders>{children}</AppProviders>
         </ClerkProvider>
       </body>
