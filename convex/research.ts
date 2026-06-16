@@ -23,9 +23,16 @@ import {
   normalizeTickerSymbol,
 } from "../lib/ticker-symbol"
 import { RESEARCH_STRATEGY_VERSION } from "../lib/research-strategy"
+import {
+  collectCacheResolutionRunIds,
+  isResearchRunCacheFresh,
+  RESEARCH_CACHE_TTL_MS,
+  selectUsableCacheSourceRunId,
+  sortResearchRunsNewestFirst,
+  type ResearchRunCacheCandidate,
+} from "../lib/research-run-cache"
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
-const RESEARCH_CACHE_TTL_MS = 7 * ONE_DAY_MS
 const AUTHENTICATED_DAILY_RUN_LIMIT = 10
 const AUTHENTICATED_CONCURRENT_RUN_LIMIT = 2
 
@@ -129,61 +136,90 @@ function assertValidSymbol(symbol: string) {
   }
 }
 
-async function getFreshCompletedRunId(
-  ctx: MutationCtx,
-  symbol: string,
-  now: number,
-): Promise<Id<"researchRuns"> | null> {
-  const runs = await ctx.db
-    .query("researchRuns")
-    .withIndex("by_symbol_and_status", (q) =>
-      q.eq("symbol", symbol).eq("status", "completed"),
-    )
-    .collect()
-
-  const freshRuns = runs
-    .filter(
-      (run) =>
-        run.completedAt !== undefined &&
-        run.completedAt > now - RESEARCH_CACHE_TTL_MS &&
-        run.researchStrategyVersion === RESEARCH_STRATEGY_VERSION,
-    )
-    .sort(
-      (a, b) =>
-        (b.completedAt ?? b.createdAt) - (a.completedAt ?? a.createdAt),
-    )
-
-  return freshRuns[0]?._id ?? null
-}
-
-async function listEventsForRun(ctx: MutationCtx, runId: Id<"researchRuns">) {
-  return await ctx.db
+async function runHasEvents(ctx: MutationCtx, runId: Id<"researchRuns">) {
+  const events = await ctx.db
     .query("catalystEvents")
     .withIndex("by_sourceRun", (q) => q.eq("sourceRunId", runId))
     .take(1)
-}
-
-async function isUsableCacheRun(
-  ctx: MutationCtx,
-  runId: Id<"researchRuns"> | null,
-) {
-  if (!runId) {
-    return false
-  }
-
-  const events = await listEventsForRun(ctx, runId)
 
   return events.length > 0
+}
+
+function toResearchRunCacheCandidate(
+  run: {
+    _id: Id<"researchRuns">
+    status: ResearchRunCacheCandidate["status"]
+    completedAt?: number
+    createdAt: number
+    researchStrategyVersion?: string
+    cacheHit: boolean
+    cacheSourceRunId?: Id<"researchRuns">
+  },
+): ResearchRunCacheCandidate {
+  return {
+    _id: run._id,
+    status: run.status,
+    completedAt: run.completedAt,
+    createdAt: run.createdAt,
+    researchStrategyVersion: run.researchStrategyVersion,
+    cacheHit: run.cacheHit,
+    cacheSourceRunId: run.cacheSourceRunId,
+  }
 }
 
 async function getUsableFreshCompletedRunId(
   ctx: MutationCtx,
   symbol: string,
   now: number,
-) {
-  const runId = await getFreshCompletedRunId(ctx, symbol, now)
+): Promise<Id<"researchRuns"> | null> {
+  const completedRuns = await ctx.db
+    .query("researchRuns")
+    .withIndex("by_symbol_and_status", (q) =>
+      q.eq("symbol", symbol).eq("status", "completed"),
+    )
+    .collect()
 
-  return (await isUsableCacheRun(ctx, runId)) ? runId : null
+  const runsById = new Map<string, ResearchRunCacheCandidate>(
+    completedRuns.map((run) => [run._id, toResearchRunCacheCandidate(run)]),
+  )
+
+  const freshCandidates = sortResearchRunsNewestFirst(
+    completedRuns.filter((run) =>
+      isResearchRunCacheFresh(
+        toResearchRunCacheCandidate(run),
+        now,
+        RESEARCH_STRATEGY_VERSION,
+        RESEARCH_CACHE_TTL_MS,
+      ),
+    ),
+  ).map((run) => toResearchRunCacheCandidate(run))
+
+  if (freshCandidates.length === 0) {
+    return null
+  }
+
+  const resolutionRunIds = collectCacheResolutionRunIds(
+    freshCandidates,
+    runsById,
+  )
+  const runIdsWithEvents = new Set<string>()
+
+  for (const runId of resolutionRunIds) {
+    if (await runHasEvents(ctx, runId as Id<"researchRuns">)) {
+      runIdsWithEvents.add(runId)
+    }
+  }
+
+  const canonicalRunId = selectUsableCacheSourceRunId(
+    freshCandidates,
+    runsById,
+    runIdsWithEvents,
+    now,
+    RESEARCH_STRATEGY_VERSION,
+    RESEARCH_CACHE_TTL_MS,
+  )
+
+  return canonicalRunId ? (canonicalRunId as Id<"researchRuns">) : null
 }
 
 export const requestAuthenticatedRun = internalMutation({
