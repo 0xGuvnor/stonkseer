@@ -22,7 +22,7 @@ export type CatalystEventView = {
   timingShape: TimingShape
   datePrecision: string
   confidence: number
-  expectedImpact: string
+  expectedImpact: "low" | "medium" | "high"
   sources: EventSourceView[]
 }
 

@@ -1,6 +1,12 @@
 "use client"
 
 import Link from "next/link"
+import {
+  SignalHigh,
+  SignalLow,
+  SignalMedium,
+  type LucideIcon,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -28,6 +34,32 @@ export type CatalystEventsTableProps = {
   now?: number
 }
 
+type ExpectedImpactPresentation = {
+  label: string
+  className: string
+  Icon?: LucideIcon
+}
+
+function formatExpectedImpact(
+  impact: CatalystEventView["expectedImpact"] | undefined,
+): ExpectedImpactPresentation {
+  if (!impact) {
+    return { label: "—", className: "text-muted-foreground" }
+  }
+
+  const label = impact.charAt(0).toUpperCase() + impact.slice(1)
+
+  if (impact === "low") {
+    return { label, className: "text-muted-foreground", Icon: SignalLow }
+  }
+
+  if (impact === "high") {
+    return { label, className: "font-medium text-primary", Icon: SignalHigh }
+  }
+
+  return { label, className: "", Icon: SignalMedium }
+}
+
 export function CatalystEventsTable({
   events,
   showSymbolColumn = false,
@@ -45,7 +77,7 @@ export function CatalystEventsTable({
         "glass overflow-hidden rounded-2xl ring-1 ring-border/60"
       }
     >
-      <Table className={showSymbolColumn ? "min-w-[920px]" : "min-w-[860px]"}>
+      <Table className={showSymbolColumn ? "min-w-[980px]" : "min-w-[920px]"}>
         <TableHeader>
           <TableRow className="border-border/60 bg-muted/40 hover:bg-muted/40">
             {showSymbolColumn ? (
@@ -64,6 +96,9 @@ export function CatalystEventsTable({
             </TableHead>
             <TableHead className="max-w-xl min-w-48 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
               Strategic significance
+            </TableHead>
+            <TableHead className="w-24 min-w-24 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+              Expected impact
             </TableHead>
             <TableHead className="w-20 max-w-20 min-w-20 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
               Sources
@@ -87,6 +122,8 @@ export function CatalystEventsTable({
                   ? "—"
                   : ""
             const symbol = getSymbol?.(event)
+            const expectedImpact = formatExpectedImpact(event.expectedImpact)
+            const ImpactIcon = expectedImpact.Icon
 
             return (
               <TableRow
@@ -129,6 +166,16 @@ export function CatalystEventsTable({
                   ) : event.summary.trim() ? null : (
                     <span className="text-muted-foreground">—</span>
                   )}
+                </TableCell>
+                <TableCell
+                  className={`w-24 min-w-24 align-top text-sm whitespace-normal ${expectedImpact.className}`}
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    {ImpactIcon ? (
+                      <ImpactIcon aria-hidden className="size-3.5 shrink-0" />
+                    ) : null}
+                    {expectedImpact.label}
+                  </span>
                 </TableCell>
                 <TableCell className="w-20 max-w-20 min-w-20 overflow-hidden align-top whitespace-normal">
                   {event.sources.length > 0 ? (
