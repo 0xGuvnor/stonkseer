@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { AppBackground } from "@/components/app-background"
 import { AppSidebar } from "@/components/app-sidebar"
 import { MainScrollPane } from "@/components/main-scroll-pane"
+import { TickerTape } from "@/components/ticker-tape"
 import {
   SidebarInset,
   SidebarProvider,
@@ -39,6 +40,7 @@ export function MainShell({ children }: { children: ReactNode }) {
             </p>
           </div>
           <MainScrollPane>{children}</MainScrollPane>
+          <TickerTape />
         </div>
       </SidebarInset>
     </SidebarProvider>

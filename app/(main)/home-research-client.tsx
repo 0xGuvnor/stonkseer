@@ -7,7 +7,6 @@ import { useForm } from "react-hook-form"
 
 import { CmdKHint } from "@/components/cmd-k-hint"
 import { HomeTypewriterSubheading } from "@/components/home-typewriter-subheading"
-import { TickerTape } from "@/components/ticker-tape"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -206,8 +205,6 @@ export function HomeResearchClient() {
           ) : null}
         </div>
       </section>
-
-      <TickerTape />
     </div>
   )
 }
