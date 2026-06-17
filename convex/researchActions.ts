@@ -1977,6 +1977,7 @@ async function buildAiEvents(
     "Exclude stale past events unless a source clearly supports a future recurrence or future milestone.",
     "summary: 1–2 short factual sentences (what/when/context); do not repeat the title or argue importance. whyItMatters: one short sentence on why the stock might move (guidance, multiple, regulatory binary, demand, dilution risk).",
     `Use null for unknown company, exchange, publication date, or event date fields. Return up to ${MAX_CATALYST_EVENTS} events, ordered chronologically when timing is known.`,
+    "Output format: return one JSON object only (companyName, exchange, events); no markdown or commentary.",
     "Research reports:",
     reportsBlock,
     "Evidence snippets:",
@@ -1986,6 +1987,8 @@ async function buildAiEvents(
   try {
     const { output } = await generateText({
       model,
+      system:
+        "Merge the research into catalyst events. Return a single valid JSON object matching the schema (companyName, exchange, events).",
       providerOptions: buildExtractionGatewayProviderOptions(gatewayCtx),
       output: Output.object({
         schema: catalystResearchAiSchema,
