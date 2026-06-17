@@ -7,7 +7,7 @@ component for batched, resumable Convex data migrations.
 ## Installation
 
 ```bash
-bun install @convex-dev/migrations
+npm install @convex-dev/migrations
 ```
 
 ## Setup
@@ -65,10 +65,10 @@ export const clearDeprecatedField = migrations.define({
 From the CLI:
 
 ```bash
-bunx convex run migrations:addDefaultRole
+npx convex run migrations:addDefaultRole
 
 # Pass --prod to run in production.
-bunx convex run migrations:addDefaultRole --prod
+npx convex run migrations:addDefaultRole --prod
 ```
 
 The migration exported by `migrations.define` is directly callable from the CLI
@@ -84,7 +84,7 @@ export const run = migrations.runner();
 Then call it with the full function name:
 
 ```bash
-bunx convex run migrations:run '{"fn": "migrations:addDefaultRole"}'
+npx convex run migrations:run '{"fn": "migrations:addDefaultRole"}'
 ```
 
 Programmatically from another Convex function:
@@ -98,7 +98,7 @@ await migrations.runOne(ctx, internal.migrations.addDefaultRole);
 For a short ad hoc series, pass `next` when starting the first migration:
 
 ```bash
-bunx convex run migrations:addDefaultRole '{"next":["migrations:clearDeprecatedField","migrations:normalizeEmails"]}'
+npx convex run migrations:addDefaultRole '{"next":["migrations:clearDeprecatedField","migrations:normalizeEmails"]}'
 ```
 
 For a reusable series, define a runner:
@@ -112,7 +112,7 @@ export const runAll = migrations.runner([
 ```
 
 ```bash
-bunx convex run migrations:runAll
+npx convex run migrations:runAll
 ```
 
 If one fails, it stops and will not continue to the next. Call it again to retry
@@ -133,7 +133,7 @@ await migrations.runSerially(ctx, [
 Test a migration before committing changes:
 
 ```bash
-bunx convex run migrations:addDefaultRole '{"dryRun": true}'
+npx convex run migrations:addDefaultRole '{"dryRun": true}'
 ```
 
 This runs one batch and then rolls back, so you can see what it would do without
@@ -144,7 +144,7 @@ changing any data.
 Pass `reset: true` to restart a migration from the beginning:
 
 ```bash
-bunx convex run migrations:addDefaultRole '{"reset": true}'
+npx convex run migrations:addDefaultRole '{"reset": true}'
 ```
 
 If you specify `next` or run a defined series, `reset: true` resets the cursor
@@ -153,13 +153,13 @@ for all migrations in the group.
 ## Check Migration Status
 
 ```bash
-bunx convex run --component migrations lib:getStatus --watch
+npx convex run --component migrations lib:getStatus --watch
 ```
 
 ## Cancel a Running Migration
 
 ```bash
-bunx convex run --component migrations lib:cancel '{"name": "migrations:addDefaultRole"}'
+npx convex run --component migrations lib:cancel '{"name": "migrations:addDefaultRole"}'
 ```
 
 Or programmatically:
@@ -173,7 +173,7 @@ await migrations.cancel(ctx, internal.migrations.addDefaultRole);
 Chain migration execution after deploying:
 
 ```bash
-bunx convex deploy --cmd 'bun run build' && bunx convex run migrations:runAll --prod
+npx convex deploy --cmd 'npm run build' && npx convex run migrations:runAll --prod
 ```
 
 ## Configuration Options
