@@ -105,7 +105,7 @@ export function HomeResearchClient() {
                   <FormItem>
                     <div
                       className={cn(
-                        "relative flex items-center gap-3 rounded-xl border bg-card/80 px-4 py-3 shadow-2xl shadow-black/40 transition-colors",
+                        "relative flex items-center gap-3 rounded-xl border bg-card/80 px-4 py-0 shadow-2xl shadow-black/40 transition-colors",
                         fieldState.invalid
                           ? "border-destructive"
                           : "border-border focus-within:border-primary/60"
@@ -119,7 +119,7 @@ export function HomeResearchClient() {
                         <Input
                           aria-label="Ticker symbol"
                           autoComplete="off"
-                          className="h-auto flex-1 border-0 bg-transparent p-0 font-mono text-lg text-foreground uppercase shadow-none ring-0 outline-none placeholder:normal-case placeholder:text-muted-foreground/60 focus-visible:border-0 focus-visible:ring-0 aria-invalid:border-transparent aria-invalid:ring-0 md:text-lg dark:bg-transparent dark:aria-invalid:border-transparent dark:aria-invalid:ring-0"
+                          className="h-auto flex-1 border-0 bg-transparent px-0 py-3 font-mono text-lg text-foreground uppercase shadow-none ring-0 outline-none placeholder:normal-case placeholder:text-muted-foreground/60 focus-visible:border-0 focus-visible:ring-0 aria-invalid:border-transparent aria-invalid:ring-0 md:text-lg dark:bg-transparent dark:aria-invalid:border-transparent dark:aria-invalid:ring-0"
                           maxLength={10}
                           placeholder="Enter a ticker, e.g. AAPL"
                           {...field}
