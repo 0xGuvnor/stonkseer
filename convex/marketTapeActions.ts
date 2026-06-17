@@ -89,13 +89,13 @@ export const refreshMarketTape = internalAction({
 
     const quoteResults = await Promise.all(
       MARKET_TAPE_SYMBOLS.map(async (entry) => {
-        const quote = await fetchFinnhubQuote(entry.finnhubSymbol, apiKey)
+        const quote = await fetchFinnhubQuote(entry.symbol, apiKey)
         if (!quote) {
           return null
         }
 
         return {
-          label: entry.label,
+          symbol: entry.symbol,
           price: quote.price,
           changePct: quote.changePct,
           sortOrder: entry.sortOrder,
@@ -108,14 +108,14 @@ export const refreshMarketTape = internalAction({
         (
           item,
         ): item is {
-          label: string
+          symbol: string
           price: number
           changePct: number
           sortOrder: number
         } => item !== null,
       )
       .sort((left, right) => left.sortOrder - right.sortOrder)
-      .map(({ label, price, changePct }) => ({ label, price, changePct }))
+      .map(({ symbol, price, changePct }) => ({ symbol, price, changePct }))
 
     if (items.length === 0) {
       console.warn(

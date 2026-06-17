@@ -3,7 +3,7 @@ import { v } from "convex/values"
 import { internalMutation } from "./_generated/server"
 
 const marketTapeItemValidator = v.object({
-  label: v.string(),
+  symbol: v.string(),
   price: v.number(),
   changePct: v.number(),
 })

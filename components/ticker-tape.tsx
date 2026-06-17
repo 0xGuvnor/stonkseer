@@ -22,7 +22,7 @@ function TapeEntry({ item }: { item: MarketTapeItem }) {
   const positive = item.changePct >= 0
   return (
     <div className="flex items-center gap-2 font-mono text-xs">
-      <span className="text-muted-foreground/80">{item.label}</span>
+      <span className="text-muted-foreground/80">{item.symbol}</span>
       <span className="text-foreground/90">{formatPrice(item.price)}</span>
       <span className={cn(positive ? "text-up" : "text-down")}>
         {formatChange(item.changePct)}
@@ -43,7 +43,7 @@ export function TickerTape() {
     <div className="relative shrink-0 overflow-hidden border-t border-border bg-background/80 py-2">
       <div className="flex w-max animate-ticker gap-8 whitespace-nowrap px-8">
         {items.map((item, index) => (
-          <TapeEntry key={`${item.label}-${index}`} item={item} />
+          <TapeEntry key={`${item.symbol}-${index}`} item={item} />
         ))}
       </div>
       <div className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-background to-transparent" />

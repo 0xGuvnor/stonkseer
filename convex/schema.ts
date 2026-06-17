@@ -242,7 +242,7 @@ export default defineSchema({
   marketTapeSnapshot: defineTable({
     items: v.array(
       v.object({
-        label: v.string(),
+        symbol: v.string(),
         price: v.number(),
         changePct: v.number(),
       }),
