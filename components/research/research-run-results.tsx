@@ -196,6 +196,29 @@ export function ResearchRunResults({
   const saveTargetValue =
     portfolioSelection || portfolioList[0]?._id || NEW_PORTFOLIO_VALUE
   const isCreatingNewPortfolio = saveTargetValue === NEW_PORTFOLIO_VALUE
+  const saveTargetPortfolioId = isCreatingNewPortfolio
+    ? null
+    : (saveTargetValue as Id<"portfolios">)
+
+  const symbolInSaveTarget = useQuery(
+    api.portfolios.isSymbolInPortfolio,
+    isAuthenticated &&
+      me &&
+      saveTargetPortfolioId &&
+      results?.run.symbol
+      ? {
+          portfolioId: saveTargetPortfolioId,
+          symbol: results.run.symbol,
+        }
+      : "skip",
+  )
+  const isAlreadyInSaveTarget = symbolInSaveTarget === true
+  const saveDisabled = isSaving || isAlreadyInSaveTarget
+  const saveTargetPortfolioName =
+    saveTargetPortfolioId !== null
+      ? (portfolioList.find((portfolio) => portfolio._id === saveTargetPortfolioId)
+          ?.name ?? "this portfolio")
+      : null
 
   const querying = results === undefined
   const runningOrQueued =
@@ -358,7 +381,7 @@ export function ResearchRunResults({
             ) : null}
             <Button
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={saveDisabled}
               className="bg-gradient-brand w-full cursor-pointer text-primary-foreground shadow-sm transition-transform hover:scale-[1.02] hover:brightness-105 sm:w-auto"
             >
               {isSaving ? (
@@ -429,6 +452,13 @@ export function ResearchRunResults({
                 <p className="text-sm text-muted-foreground">
                   No portfolios yet. Saving this run creates one with every
                   catalyst from it.
+                </p>
+              ) : null}
+              {isAlreadyInSaveTarget &&
+              results?.run.symbol &&
+              saveTargetPortfolioName ? (
+                <p className="text-sm text-muted-foreground">
+                  {results.run.symbol} is already in {saveTargetPortfolioName}.
                 </p>
               ) : null}
             </div>

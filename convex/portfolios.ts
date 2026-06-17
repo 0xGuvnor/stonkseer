@@ -170,6 +170,27 @@ export const listMine = query({
   },
 })
 
+export const isSymbolInPortfolio = query({
+  args: {
+    portfolioId: v.id("portfolios"),
+    symbol: v.string(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const { portfolio } = await requirePortfolioOwner(ctx, args.portfolioId)
+    const symbol = normalizeTickerSymbol(args.symbol)
+
+    const existingPortfolioStocks = await ctx.db
+      .query("portfolioStocks")
+      .withIndex("by_portfolio_and_symbol", (q) =>
+        q.eq("portfolioId", portfolio._id).eq("symbol", symbol),
+      )
+      .take(1)
+
+    return existingPortfolioStocks[0] !== undefined
+  },
+})
+
 export const create = mutation({
   args: {
     name: v.string(),
