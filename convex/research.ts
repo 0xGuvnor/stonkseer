@@ -1,4 +1,4 @@
-import { v } from "convex/values"
+import { ConvexError, v } from "convex/values"
 
 import { internal } from "./_generated/api"
 import type { Id } from "./_generated/dataModel"
@@ -128,17 +128,21 @@ async function assertAuthenticatedBudget(
   ).length
 
   if (dailyRunCount >= AUTHENTICATED_DAILY_RUN_LIMIT) {
-    throw new Error("Daily research limit reached")
+    throw new ConvexError(
+      `You've used all ${AUTHENTICATED_DAILY_RUN_LIMIT} research runs in the last 24 hours. Cached results from the past 7 days don't count toward this limit—try a ticker you've researched recently, or try again tomorrow.`,
+    )
   }
 
   if (activeRunCount >= AUTHENTICATED_CONCURRENT_RUN_LIMIT) {
-    throw new Error("Too many research runs are already in progress")
+    throw new ConvexError(
+      `You already have ${AUTHENTICATED_CONCURRENT_RUN_LIMIT} research runs in progress. Wait for one to finish before starting another.`,
+    )
   }
 }
 
 function assertValidSymbol(symbol: string) {
   if (!isTickerSymbolSyntaxValid(symbol)) {
-    throw new Error("Enter a valid ticker symbol")
+    throw new ConvexError("Enter a valid ticker symbol")
   }
 }
 
@@ -334,7 +338,9 @@ export const requestAnonymousRun = internalMutation({
       )
 
       if (ipRunCount >= 1 || tokenRunCount >= 1) {
-        throw new Error("Anonymous trial limit reached for today")
+        throw new ConvexError(
+          "You've used your free research for today. Sign in for more runs, or try again tomorrow.",
+        )
       }
 
       await ctx.db.insert("anonymousUsage", {

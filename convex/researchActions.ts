@@ -17,7 +17,7 @@ import { internal } from "./_generated/api"
 import { action, internalAction } from "./_generated/server"
 import type { ActionCtx } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
-import { v } from "convex/values"
+import { ConvexError, v } from "convex/values"
 import { researchStatusValidator } from "./schema"
 import {
   catalystResearchAiSchema,
@@ -957,7 +957,7 @@ async function validateTicker(
 
 function assertTickerExists(validation: TickerValidation) {
   if (!validation.isValid) {
-    throw new Error("Ticker not found or unsupported")
+    throw new ConvexError("Ticker not found or unsupported")
   }
 }
 

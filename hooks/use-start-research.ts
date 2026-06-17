@@ -5,6 +5,7 @@ import { useAction, useConvexAuth } from "convex/react"
 import { useRouter } from "next/navigation"
 
 import { api } from "@/convex/_generated/api"
+import { getConvexMutationUserMessage } from "@/lib/convex-mutation-error"
 import { writeActiveResearchSession } from "@/lib/research-run-session-storage"
 import type { AnonymousResearchRunResponse } from "@/types/research-ui"
 
@@ -75,7 +76,7 @@ export function useStartResearch() {
 
       return { status: "ok" }
     } catch (error) {
-      const text = error instanceof Error ? error.message : "Research failed"
+      const text = getConvexMutationUserMessage(error, "Unable to start research")
       const message =
         clerkLoaded &&
         isSignedIn &&

@@ -9,6 +9,7 @@ import {
 } from "node:crypto"
 
 import { api } from "@/convex/_generated/api"
+import { getConvexMutationUserMessage } from "@/lib/convex-mutation-error"
 
 const COOKIE_NAME = "stonkseer_anon_trial"
 
@@ -113,8 +114,10 @@ export async function POST(request: Request) {
 
     return response
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unable to start anonymous research"
+    const message = getConvexMutationUserMessage(
+      error,
+      "Unable to start anonymous research",
+    )
     const status = message.includes("Ticker not found") ? 400 : 429
 
     return NextResponse.json(
