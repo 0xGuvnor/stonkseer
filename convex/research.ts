@@ -37,6 +37,7 @@ import {
   type ResearchRunCacheCandidate,
 } from "../lib/research-run-cache"
 import { filterUpcomingCatalystEvents } from "../lib/portfolio-catalyst-utils"
+import { isAdminUser } from "../lib/admin"
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
 const AUTHENTICATED_DAILY_RUN_LIMIT = 10
@@ -261,7 +262,7 @@ export const requestAuthenticatedRun = internalMutation({
       args.now,
     )
     const cacheHit = cacheSourceRunId !== null
-    if (!cacheHit) {
+    if (!cacheHit && !isAdminUser(user)) {
       await assertAuthenticatedBudget(ctx, user._id, args.now)
     }
 
