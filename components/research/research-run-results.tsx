@@ -29,7 +29,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { formatIssuerHeading } from "@/lib/ticker-display"
 import { cn } from "@/lib/utils"
 import { RESEARCH_ROUTE_CENTER_SHELL } from "@/lib/research-route-layout"
 import { sortCatalystEventsByAnchor } from "@/lib/research-results-utils"
@@ -92,7 +91,13 @@ function ResearchRunHeading({
 }) {
   return (
     <>
-      {formatIssuerHeading(symbol, companyName)}{" "}
+      {companyName ? (
+        <>
+          {companyName} (<span className="font-mono">{symbol}</span>)
+        </>
+      ) : (
+        <span className="font-mono">{symbol}</span>
+      )}{" "}
       <span className="text-muted-foreground">{suffix}</span>
     </>
   )

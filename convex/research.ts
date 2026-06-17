@@ -446,6 +446,39 @@ export const getRunResults = query({
   },
 })
 
+const RECENT_SEARCH_LIMIT = 5
+const RECENT_SEARCH_SCAN_LIMIT = 50
+
+export const listRecentSearches = query({
+  args: {},
+  returns: v.array(v.object({ symbol: v.string() })),
+  handler: async (ctx) => {
+    const user = await getCurrentUserOrNull(ctx)
+    if (!user) {
+      return []
+    }
+
+    const runs = await ctx.db
+      .query("researchRuns")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .take(RECENT_SEARCH_SCAN_LIMIT)
+
+    const seen = new Set<string>()
+    const recent: Array<{ symbol: string }> = []
+
+    for (const run of runs) {
+      if (run.source !== "authenticated") continue
+      if (seen.has(run.symbol)) continue
+      seen.add(run.symbol)
+      recent.push({ symbol: run.symbol })
+      if (recent.length >= RECENT_SEARCH_LIMIT) break
+    }
+
+    return recent
+  },
+})
+
 export const listUpcomingForPortfolio = query({
   args: {
     portfolioId: v.id("portfolios"),

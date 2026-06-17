@@ -1,8 +1,11 @@
 import { cn } from "@/lib/utils"
 
 /**
- * Ambient atmosphere layer rendered behind page content inside the inset panel.
- * Soft brand-tinted radial glows give depth without any hard borders.
+ * Ambient canvas rendered behind page content on every route.
+ * Per the "Quiet Terminal" spec, this is the only decoration allowed: a single
+ * faint mint bloom at the top center (the only "glow" allowed), plus a
+ * barely-there grid texture that gives a sense of deliberate surface rather
+ * than void.
  */
 export function AppBackground({ className }: { className?: string }) {
   return (
@@ -13,28 +16,21 @@ export function AppBackground({ className }: { className?: string }) {
         className
       )}
     >
-      {/* Top centered emerald bloom */}
+      {/* Single faint mint bloom at the top center */}
       <div
-        className="absolute -top-40 left-1/2 h-[520px] w-[min(900px,120%)] -translate-x-1/2 rounded-full opacity-80 blur-2xl"
+        className="absolute inset-0"
         style={{
-          background:
-            "radial-gradient(closest-side, var(--glow-primary), transparent)",
+          backgroundImage:
+            "radial-gradient(ellipse 70% 50% at 50% -10%, oklch(0.82 0.16 165 / 0.08), transparent)",
         }}
       />
-      {/* Right teal accent */}
+      {/* Barely-visible grid texture */}
       <div
-        className="absolute top-1/4 -right-32 h-[460px] w-[460px] rounded-full opacity-70 blur-2xl"
+        className="absolute inset-0 text-foreground opacity-[0.025]"
         style={{
-          background:
-            "radial-gradient(closest-side, var(--glow-secondary), transparent)",
-        }}
-      />
-      {/* Lower-left cool wash */}
-      <div
-        className="absolute -bottom-40 -left-24 h-[420px] w-[420px] rounded-full opacity-60 blur-2xl"
-        style={{
-          background:
-            "radial-gradient(closest-side, var(--glow-secondary), transparent)",
+          backgroundImage:
+            "linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
+          backgroundSize: "40px 40px",
         }}
       />
     </div>

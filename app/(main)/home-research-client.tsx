@@ -1,16 +1,14 @@
 "use client"
 
-import { useAuth } from "@clerk/nextjs"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useAction, useConvexAuth } from "convex/react"
 import { ArrowRight, Loader2, Search, TrendingUp } from "lucide-react"
-import { useRouter } from "next/navigation"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useForm } from "react-hook-form"
 
+import { CmdKHint } from "@/components/cmd-k-hint"
 import { HomeTypewriterSubheading } from "@/components/home-typewriter-subheading"
+import { TickerTape } from "@/components/ticker-tape"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Form,
@@ -20,13 +18,13 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { api } from "@/convex/_generated/api"
+import { useStartResearch } from "@/hooks/use-start-research"
+import { cn } from "@/lib/utils"
+import { FOCUS_HOME_SEARCH_EVENT } from "@/lib/app-navigation"
 import {
   researchFormSchema,
   type ResearchFormValues,
 } from "@/lib/research-form-schema"
-import { writeActiveResearchSession } from "@/lib/research-run-session-storage"
-import type { AnonymousResearchRunResponse } from "@/types/research-ui"
 
 const POPULAR_TICKERS = [
   "AAPL",
@@ -40,7 +38,6 @@ const POPULAR_TICKERS = [
 ] as const
 
 export function HomeResearchClient() {
-  const router = useRouter()
   const form = useForm<ResearchFormValues>({
     resolver: zodResolver(researchFormSchema),
     defaultValues: { symbol: "" },
@@ -50,187 +47,167 @@ export function HomeResearchClient() {
   const [message, setMessage] = useState<string | null>(null)
   const symbolInputRef = useRef<HTMLInputElement>(null)
 
-  const { isLoaded: clerkLoaded, isSignedIn } = useAuth()
-  const { isAuthenticated } = useConvexAuth()
-  const requestAuthenticatedRun = useAction(
-    api.researchActions.requestAuthenticatedRun
-  )
+  const { startResearch, clerkLoaded } = useStartResearch()
+
+  // Let the sidebar search trigger / Cmd+K focus this input when on `/`.
+  useEffect(() => {
+    function focusInput() {
+      const input = symbolInputRef.current
+      if (!input) return
+      input.focus()
+      input.setSelectionRange(input.value.length, input.value.length)
+    }
+    window.addEventListener(FOCUS_HOME_SEARCH_EVENT, focusInput)
+    return () => window.removeEventListener(FOCUS_HOME_SEARCH_EVENT, focusInput)
+  }, [])
 
   async function onResearchSubmit(values: ResearchFormValues) {
-    const normalizedSymbol = values.symbol.trim().toUpperCase()
     setMessage(null)
-
-    try {
-      if (!clerkLoaded) {
-        setMessage("Checking your session. Try again in a moment.")
-        return
-      }
-
-      if (isSignedIn && !isAuthenticated) {
-        setMessage("Connecting your account. Try again in a moment.")
-        return
-      }
-
-      if (isSignedIn) {
-        const result = await requestAuthenticatedRun({
-          symbol: normalizedSymbol,
-          now: Number(new Date()),
-        })
-        writeActiveResearchSession(normalizedSymbol, {
-          runId: result.runId,
-        })
-        router.push(`/${normalizedSymbol}`)
-      } else {
-        const response = await fetch("/api/research/anonymous", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ symbol: normalizedSymbol }),
-        })
-        const result = (await response.json()) as AnonymousResearchRunResponse
-
-        if (!response.ok || "error" in result) {
-          throw new Error(
-            "error" in result ? result.error : "Unable to start research"
-          )
-        }
-
-        writeActiveResearchSession(normalizedSymbol, {
-          runId: result.runId,
-          anonymousTokenHash: result.anonymousTokenHash,
-        })
-        router.push(`/${normalizedSymbol}`)
-      }
-    } catch (error) {
-      const text = error instanceof Error ? error.message : "Research failed"
-      setMessage(
-        clerkLoaded &&
-          isSignedIn &&
-          (text === "Not authenticated" ||
-            text.toLowerCase().includes("unauthenticated"))
-          ? `${text} If this persists, add a Clerk JWT template named "convex" and set CLERK_JWT_ISSUER_DOMAIN in Convex.`
-          : text
-      )
+    const result = await startResearch(values.symbol)
+    if (result.status === "error") {
+      setMessage(result.message)
     }
   }
 
   const isSubmitting = form.formState.isSubmitting
 
   return (
-    <section className="mx-auto flex min-h-full w-full max-w-3xl flex-col items-center justify-center gap-8 px-5 pb-6 sm:px-6 md:pb-12">
-      <div className="flex w-full max-w-xl flex-col items-center text-center">
-        <Badge
-          variant="secondary"
-          className="glass mb-6 gap-2 rounded-full border-0 px-3.5 py-1.5 text-xs font-medium ring-1 ring-border/60"
-        >
-          <span className="relative flex size-2">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/70" />
-            <span className="bg-gradient-brand relative inline-flex size-2 rounded-full" />
-          </span>
-          AI-powered stock catalyst research
-        </Badge>
-        <h1 className="font-heading text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-          What&apos;s moving your{" "}
-          <span className="text-gradient-brand">stonks?</span>
-        </h1>
-        <HomeTypewriterSubheading />
-
-        <Form {...form}>
-          <form
-            className="mt-9 w-full max-w-xl"
-            onSubmit={form.handleSubmit(onResearchSubmit)}
-          >
-            <FormField
-              control={form.control}
-              name="symbol"
-              render={({ field }) => (
-                <FormItem>
-                  <div className="group glass relative flex w-full items-center rounded-full p-1.5 shadow-lg ring-1 ring-border/70 transition-shadow focus-within:ring-2 focus-within:ring-primary/60 focus-within:shadow-primary/10">
-                    <Search
-                      aria-hidden
-                      className="pointer-events-none absolute left-5 size-5 text-muted-foreground transition-colors group-focus-within:text-primary"
-                    />
-                    <FormControl>
-                      <Input
-                        aria-label="Ticker symbol"
-                        autoComplete="off"
-                        className="h-12 border-0 bg-transparent pr-14 pl-12 text-base uppercase shadow-none ring-0 outline-none placeholder:normal-case focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
-                        maxLength={10}
-                        placeholder="Enter a ticker, e.g. AAPL"
-                        {...field}
-                        ref={(element) => {
-                          field.ref(element)
-                          symbolInputRef.current = element
-                        }}
-                        autoFocus
-                      />
-                    </FormControl>
-                    <Button
-                      aria-label={
-                        isSubmitting ? "Starting research" : "Research"
-                      }
-                      className="bg-gradient-brand size-11 shrink-0 rounded-full text-primary-foreground shadow-md transition-transform hover:scale-105 hover:brightness-105 disabled:hover:scale-100"
-                      disabled={
-                        isSubmitting || !form.formState.isValid || !clerkLoaded
-                      }
-                      size="icon"
-                      type="submit"
-                    >
-                      {isSubmitting ? (
-                        <Loader2 className="size-5 animate-spin" />
-                      ) : (
-                        <ArrowRight className="size-5" />
-                      )}
-                    </Button>
-                  </div>
-                  <FormMessage className="mt-2.5 text-center" />
-                </FormItem>
-              )}
-            />
-          </form>
-        </Form>
-
-        <div className="mt-10 flex w-full max-w-xl flex-col items-center gap-3.5">
-          <div className="flex items-center justify-center gap-2 text-muted-foreground">
-            <TrendingUp aria-hidden className="size-3.5 shrink-0" />
-            <span className="text-[0.65rem] font-semibold tracking-[0.2em] uppercase">
-              Popular
+    <div className="relative flex h-full min-h-full flex-col overflow-hidden">
+      <section className="flex flex-1 flex-col items-center justify-center gap-8 overflow-y-auto px-5 py-10 sm:px-6">
+        <div className="mx-auto flex w-full max-w-xl flex-col items-center text-center">
+          {/* Badge */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1">
+            <span className="size-1.5 animate-signal rounded-full bg-primary" />
+            <span className="font-mono text-[11px] font-medium tracking-wide text-muted-foreground">
+              AI-powered catalyst research
             </span>
           </div>
-          <div className="flex flex-wrap justify-center gap-2">
-            {POPULAR_TICKERS.map((symbol) => (
-              <Button
-                key={symbol}
-                type="button"
-                variant="outline"
-                size="sm"
-                className="rounded-full border-border/70 bg-card/50 px-3.5 font-medium tracking-wide backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:text-primary"
-                onClick={() => {
-                  form.setValue("symbol", symbol, {
-                    shouldValidate: true,
-                    shouldDirty: true,
-                  })
-                  requestAnimationFrame(() => {
-                    const input = symbolInputRef.current
-                    if (!input) return
-                    input.focus()
-                    input.setSelectionRange(symbol.length, symbol.length)
-                  })
-                }}
-              >
-                {symbol}
-              </Button>
-            ))}
-          </div>
-        </div>
-      </div>
 
-      {message ? (
-        <div className="w-full max-w-xl">
-          <Alert className="glass text-left">
-            <AlertDescription>{message}</AlertDescription>
-          </Alert>
+          {/* Headline */}
+          <h1 className="mt-6 text-balance text-center font-heading text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
+            What&apos;s moving
+            <br />
+            your <span className="text-primary italic">stonks?</span>
+          </h1>
+
+          <HomeTypewriterSubheading />
+
+          {/* Search bar */}
+          <Form {...form}>
+            <form
+              className="mt-8 w-full"
+              onSubmit={form.handleSubmit(onResearchSubmit)}
+            >
+              <FormField
+                control={form.control}
+                name="symbol"
+                render={({ field, fieldState }) => (
+                  <FormItem>
+                    <div
+                      className={cn(
+                        "relative flex items-center gap-3 rounded-xl border bg-card/80 px-4 py-3 shadow-2xl shadow-black/40 transition-colors",
+                        fieldState.invalid
+                          ? "border-destructive"
+                          : "border-border focus-within:border-primary/60"
+                      )}
+                    >
+                      <Search
+                        aria-hidden
+                        className="size-5 shrink-0 text-muted-foreground"
+                      />
+                      <FormControl>
+                        <Input
+                          aria-label="Ticker symbol"
+                          autoComplete="off"
+                          className="h-auto flex-1 border-0 bg-transparent p-0 font-mono text-lg text-foreground uppercase shadow-none ring-0 outline-none placeholder:normal-case placeholder:text-muted-foreground/60 focus-visible:border-0 focus-visible:ring-0 aria-invalid:border-transparent aria-invalid:ring-0 md:text-lg dark:bg-transparent dark:aria-invalid:border-transparent dark:aria-invalid:ring-0"
+                          maxLength={10}
+                          placeholder="Enter a ticker, e.g. AAPL"
+                          {...field}
+                          ref={(element) => {
+                            field.ref(element)
+                            symbolInputRef.current = element
+                          }}
+                          autoFocus
+                        />
+                      </FormControl>
+                      <CmdKHint className="hidden sm:inline-flex" />
+                      <Button
+                        aria-label={
+                          isSubmitting ? "Starting research" : "Research"
+                        }
+                        className="size-8 shrink-0 rounded-lg bg-primary text-primary-foreground transition-transform hover:scale-105 hover:bg-primary disabled:hover:scale-100"
+                        disabled={
+                          isSubmitting ||
+                          !form.formState.isValid ||
+                          !clerkLoaded
+                        }
+                        size="icon"
+                        type="submit"
+                      >
+                        {isSubmitting ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <ArrowRight className="size-4" />
+                        )}
+                      </Button>
+                    </div>
+                    <FormMessage className="mt-2.5 text-center" />
+                  </FormItem>
+                )}
+              />
+            </form>
+          </Form>
+
+          {/* Popular tickers */}
+          <div className="mt-10 flex w-full flex-col items-center gap-3">
+            <div className="flex items-center justify-center gap-1.5 text-muted-foreground/70">
+              <TrendingUp aria-hidden className="size-3.5 shrink-0" />
+              <span className="font-mono text-[10px] tracking-widest uppercase">
+                Popular
+              </span>
+            </div>
+            <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3">
+              {POPULAR_TICKERS.map((symbol) => (
+                <button
+                  key={symbol}
+                  type="button"
+                  className="flex cursor-pointer items-center justify-between rounded-lg border border-border bg-card/50 px-3 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-card"
+                  onClick={() => {
+                    form.setValue("symbol", symbol, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    })
+                    requestAnimationFrame(() => {
+                      const input = symbolInputRef.current
+                      if (!input) return
+                      input.focus()
+                      input.setSelectionRange(symbol.length, symbol.length)
+                    })
+                  }}
+                >
+                  <span className="font-mono text-sm font-semibold tracking-tight text-foreground">
+                    {symbol}
+                  </span>
+                  <ArrowRight
+                    aria-hidden
+                    className="size-3.5 text-muted-foreground/50"
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {message ? (
+            <div className="mt-6 w-full">
+              <Alert className="rounded-lg text-left">
+                <AlertDescription>{message}</AlertDescription>
+              </Alert>
+            </div>
+          ) : null}
         </div>
-      ) : null}
-    </section>
+      </section>
+
+      <TickerTape />
+    </div>
   )
 }

@@ -10,7 +10,7 @@ const STATIC_SENTENCE =
   "Earnings, launches, and regulatory events that could move a stock over the next 12 months."
 
 const SUBHEADING_SHELL_CLASS =
-  "mt-4 flex h-[3lh] w-full max-w-md items-center justify-center text-center text-base leading-snug sm:h-[2.5lh] sm:text-lg"
+  "mt-4 flex h-[3lh] w-full max-w-md items-center justify-center text-center text-sm leading-relaxed sm:h-[2.5lh]"
 
 const TYPE_MS = 60
 const DELETE_MS = 40
@@ -98,10 +98,10 @@ function AnimatedSubheading() {
     <div className={SUBHEADING_SHELL_CLASS}>
       <span className="sr-only">{STATIC_SENTENCE}</span>
       <p aria-hidden className="w-full text-pretty text-muted-foreground">
-        <span className="text-gradient-brand">{displayText}</span>
+        <span className="font-medium text-primary">{displayText}</span>
         <span
           aria-hidden
-          className="animate-typewriter-cursor inline-block text-primary"
+          className="animate-typewriter-cursor inline-block font-mono text-primary"
         >
           |
         </span>
