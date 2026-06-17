@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 
 const PHRASES = ["Earnings", "Launches", "Regulatory events"] as const
 
-const STATIC_SUFFIX = " that could move a stock over the next 12 months."
+const STATIC_SUFFIX = "that could move a stock over the next 12 months."
 
 const STATIC_SENTENCE =
   "Earnings, launches, and regulatory events that could move a stock over the next 12 months."
@@ -82,7 +82,9 @@ function useTypewriterCycle(
 function StaticSubheading() {
   return (
     <div className={SUBHEADING_SHELL_CLASS}>
-      <p className="w-full text-pretty text-muted-foreground">{STATIC_SENTENCE}</p>
+      <p className="w-full text-pretty text-muted-foreground">
+        {STATIC_SENTENCE}
+      </p>
     </div>
   )
 }
@@ -101,7 +103,7 @@ function AnimatedSubheading() {
         <span className="font-medium text-primary">{displayText}</span>
         <span
           aria-hidden
-          className="animate-typewriter-cursor inline-block font-mono text-primary"
+          className="animate-typewriter-cursor -ml-1 inline-block font-mono text-primary"
         >
           |
         </span>
