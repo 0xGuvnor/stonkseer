@@ -11,7 +11,9 @@
 import type * as crons from "../crons.js";
 import type * as devData from "../devData.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_catalystEvents from "../lib/catalystEvents.js";
 import type * as lib_companyName from "../lib/companyName.js";
+import type * as migrations from "../migrations.js";
 import type * as portfolios from "../portfolios.js";
 import type * as research from "../research.js";
 import type * as researchActions from "../researchActions.js";
@@ -29,7 +31,9 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   devData: typeof devData;
   "lib/auth": typeof lib_auth;
+  "lib/catalystEvents": typeof lib_catalystEvents;
   "lib/companyName": typeof lib_companyName;
+  migrations: typeof migrations;
   portfolios: typeof portfolios;
   research: typeof research;
   researchActions: typeof researchActions;

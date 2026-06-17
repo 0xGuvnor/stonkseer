@@ -20,6 +20,10 @@ import {
 } from "./lib/auth"
 import { lookupCompanyNameForSymbol } from "./lib/companyName"
 import {
+  loadCatalystEventsWithSources,
+  resolveStockIdForSymbol,
+} from "./lib/catalystEvents"
+import {
   isTickerSymbolSyntaxValid,
   normalizeTickerSymbol,
 } from "../lib/ticker-symbol"
@@ -32,6 +36,7 @@ import {
   sortResearchRunsNewestFirst,
   type ResearchRunCacheCandidate,
 } from "../lib/research-run-cache"
+import { filterUpcomingCatalystEvents } from "../lib/portfolio-catalyst-utils"
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
 const AUTHENTICATED_DAILY_RUN_LIMIT = 10
@@ -405,29 +410,34 @@ export const getRunResults = query({
       throw new Error("Unauthorized")
     }
 
-    let events = await ctx.db
-      .query("catalystEvents")
-      .withIndex("by_sourceRun", (q) => q.eq("sourceRunId", run._id))
-      .collect()
+    let eventsWithSources = []
+    const stockId = await resolveStockIdForSymbol(ctx, run.symbol)
 
-    if (events.length === 0 && run.cacheHit && run.cacheSourceRunId) {
-      events = await ctx.db
+    if (stockId) {
+      eventsWithSources = await loadCatalystEventsWithSources(ctx, stockId)
+    } else {
+      let events = await ctx.db
         .query("catalystEvents")
-        .withIndex("by_sourceRun", (q) =>
-          q.eq("sourceRunId", run.cacheSourceRunId),
-        )
-        .collect()
-    }
-
-    const eventsWithSources = []
-
-    for (const event of events) {
-      const sources = await ctx.db
-        .query("eventSources")
-        .withIndex("by_event", (q) => q.eq("eventId", event._id))
+        .withIndex("by_sourceRun", (q) => q.eq("sourceRunId", run._id))
         .collect()
 
-      eventsWithSources.push({ ...event, sources })
+      if (events.length === 0 && run.cacheHit && run.cacheSourceRunId) {
+        events = await ctx.db
+          .query("catalystEvents")
+          .withIndex("by_sourceRun", (q) =>
+            q.eq("sourceRunId", run.cacheSourceRunId),
+          )
+          .collect()
+      }
+
+      for (const event of events) {
+        const sources = await ctx.db
+          .query("eventSources")
+          .withIndex("by_event", (q) => q.eq("eventId", event._id))
+          .collect()
+
+        eventsWithSources.push({ ...event, sources })
+      }
     }
 
     const companyName = await lookupCompanyNameForSymbol(ctx, run.symbol)
@@ -439,38 +449,41 @@ export const getRunResults = query({
 export const listUpcomingForPortfolio = query({
   args: {
     portfolioId: v.id("portfolios"),
+    now: v.number(),
   },
   returns: v.array(eventWithSourcesReturn),
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx)
-    const portfolio = await ctx.db.get(args.portfolioId)
+    const portfolio = await ctx.db.get("portfolios", args.portfolioId)
 
     if (!portfolio || portfolio.userId !== user._id) {
       throw new Error("Unauthorized")
     }
 
-    const trackedEvents = await ctx.db
-      .query("trackedEvents")
+    const portfolioStocks = await ctx.db
+      .query("portfolioStocks")
       .withIndex("by_portfolio", (q) => q.eq("portfolioId", portfolio._id))
       .collect()
     const eventsWithSources = []
 
-    for (const trackedEvent of trackedEvents) {
-      const event = await ctx.db.get(trackedEvent.eventId)
-
-      if (!event) {
+    for (const portfolioStock of portfolioStocks) {
+      if (portfolioStock.status !== "active") {
         continue
       }
 
-      const sources = await ctx.db
-        .query("eventSources")
-        .withIndex("by_event", (q) => q.eq("eventId", event._id))
-        .collect()
+      const stockId =
+        portfolioStock.stockId ??
+        (await resolveStockIdForSymbol(ctx, portfolioStock.symbol))
 
-      eventsWithSources.push({ ...event, sources })
+      if (!stockId) {
+        continue
+      }
+
+      const stockEvents = await loadCatalystEventsWithSources(ctx, stockId)
+      eventsWithSources.push(...stockEvents)
     }
 
-    return eventsWithSources
+    return filterUpcomingCatalystEvents(eventsWithSources, args.now)
   },
 })
 

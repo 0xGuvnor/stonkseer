@@ -78,6 +78,7 @@ export default defineSchema({
     symbol: v.string(),
     companyName: v.optional(v.string()),
     exchange: v.optional(v.string()),
+    currentSourceRunId: v.optional(v.id("researchRuns")),
     lastRefreshedAt: v.optional(v.number()),
     researchCacheInvalidatedAt: v.optional(v.number()),
     createdAt: v.number(),
@@ -237,22 +238,4 @@ export default defineSchema({
   })
     .index("by_event", ["eventId"])
     .index("by_url", ["url"]),
-
-  trackedEvents: defineTable({
-    userId: v.id("users"),
-    portfolioId: v.id("portfolios"),
-    portfolioStockId: v.id("portfolioStocks"),
-    eventId: v.id("catalystEvents"),
-    notificationPreference: v.union(
-      v.literal("none"),
-      v.literal("weekly"),
-      v.literal("day_before"),
-    ),
-    createdAt: v.number(),
-  })
-    .index("by_user", ["userId"])
-    .index("by_portfolio", ["portfolioId"])
-    .index("by_event", ["eventId"])
-    .index("by_user_and_event", ["userId", "eventId"])
-    .index("by_portfolio_and_event", ["portfolioId", "eventId"]),
 })

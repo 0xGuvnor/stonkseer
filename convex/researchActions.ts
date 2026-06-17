@@ -2241,14 +2241,6 @@ export const runResearch = internalAction({
         events,
         model: process.env.AI_GATEWAY_MODEL ?? "deterministic-finnhub-snippets",
       })
-
-      if (run.source === "refresh") {
-        await ctx.runMutation(internal.researchInternal.syncPortfolioAfterRefresh, {
-          runId: args.runId,
-          symbol: run.symbol,
-          now: Date.now(),
-        })
-      }
     } catch (error) {
       await ctx.runMutation(internal.researchInternal.markFailed, {
         runId: args.runId,

@@ -218,8 +218,6 @@ export function ResearchRunResults({
       return
     }
 
-    const eventIds = sortedCatalystEvents.map((event) => event._id)
-
     setIsSaving(true)
     try {
       const selectedPortfolioValue =
@@ -239,23 +237,14 @@ export function ResearchRunResults({
       const saveResult = await saveResearchToPortfolio({
         portfolioId,
         symbol: results.run.symbol,
-        eventIds,
       })
 
       if (saveResult.alreadyInPortfolio) {
         toast.info(
           `${results.run.symbol} is already in ${targetPortfolioName}`,
-          {
-            description:
-              saveResult.newTrackedEventCount > 0
-                ? `${saveResult.newTrackedEventCount} new catalyst${saveResult.newTrackedEventCount === 1 ? "" : "s"} added.`
-                : "Tracked catalysts are up to date.",
-          },
         )
       } else {
-        toast.success(`Saved ${results.run.symbol} to ${targetPortfolioName}`, {
-          description: `${eventIds.length} catalyst${eventIds.length === 1 ? "" : "s"} added.`,
-        })
+        toast.success(`Saved ${results.run.symbol} to ${targetPortfolioName}`)
       }
     } catch (error) {
       showConvexMutationErrorToast(error, "Could not save to portfolio.")

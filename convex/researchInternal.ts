@@ -10,6 +10,11 @@ import {
 } from "./schema"
 import { RESEARCH_STRATEGY_VERSION } from "../lib/research-strategy"
 import { isPortfolioStockDueForRefresh } from "../lib/portfolio-refresh"
+import {
+  deleteCatalystEventsForStock,
+  insertCatalystEventsForStock,
+  markPortfolioStocksResearchRefreshed,
+} from "./lib/catalystEvents"
 
 const sourceInput = v.object({
   url: v.string(),
@@ -207,48 +212,23 @@ export const upsertResearchResults = internalMutation({
       throw new Error("Unable to upsert stock")
     }
 
-    const eventIds = []
+    await deleteCatalystEventsForStock(ctx, stock._id)
 
-    for (const event of args.events) {
-      const eventId = await ctx.db.insert("catalystEvents", {
-        stockId: stock._id,
-        sourceRunId: args.runId,
-        symbol: args.symbol,
-        title: event.title,
-        summary: event.summary,
-        whyItMatters: event.whyItMatters,
-        eventType: event.eventType,
-        expectedDate: event.expectedDate,
-        windowStart: event.windowStart,
-        windowEnd: event.windowEnd,
-        periodKey: event.periodKey,
-        timingShape: event.timingShape,
-        datePrecision: event.datePrecision,
-        confidence: event.confidence,
-        status: event.status,
-        expectedImpact: event.expectedImpact,
-        sourceCount: event.sources.length,
-        lastVerifiedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      })
+    const eventIds = await insertCatalystEventsForStock(ctx, {
+      stockId: stock._id,
+      runId: args.runId,
+      symbol: args.symbol,
+      events: args.events,
+      now,
+    })
 
-      for (const source of event.sources) {
-        await ctx.db.insert("eventSources", {
-          eventId,
-          url: source.url,
-          title: source.title,
-          publisher: source.publisher,
-          publishedAt: source.publishedAt,
-          accessedAt: now,
-          quote: source.quote,
-          supportsFields: source.supportsFields,
-          provenance: source.provenance,
-        })
-      }
+    await ctx.db.patch(stock._id, {
+      currentSourceRunId: args.runId,
+      lastRefreshedAt: now,
+      updatedAt: now,
+    })
 
-      eventIds.push(eventId)
-    }
+    await markPortfolioStocksResearchRefreshed(ctx, args.symbol, now)
 
     await ctx.db.patch(args.runId, {
       status: "completed",
@@ -307,76 +287,5 @@ export const queueTrackedRefreshes = internalMutation({
     }
 
     return queuedRunIds
-  },
-})
-
-export const syncPortfolioAfterRefresh = internalMutation({
-  args: {
-    runId: v.id("researchRuns"),
-    symbol: v.string(),
-    now: v.number(),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const refreshEvents = await ctx.db
-      .query("catalystEvents")
-      .withIndex("by_sourceRun", (q) => q.eq("sourceRunId", args.runId))
-      .collect()
-
-    if (refreshEvents.length === 0) {
-      return null
-    }
-
-    const portfolioStocks = await ctx.db
-      .query("portfolioStocks")
-      .withIndex("by_symbol", (q) => q.eq("symbol", args.symbol))
-      .collect()
-
-    for (const portfolioStock of portfolioStocks) {
-      if (portfolioStock.status !== "active") {
-        continue
-      }
-
-      if (
-        !isPortfolioStockDueForRefresh(
-          portfolioStock.lastPortfolioRefreshAt,
-          args.now,
-        )
-      ) {
-        continue
-      }
-
-      const trackedEvents = await ctx.db
-        .query("trackedEvents")
-        .withIndex("by_portfolio", (q) =>
-          q.eq("portfolioId", portfolioStock.portfolioId),
-        )
-        .collect()
-      const stockTrackedEvents = trackedEvents.filter(
-        (trackedEvent) => trackedEvent.portfolioStockId === portfolioStock._id,
-      )
-
-      for (const trackedEvent of stockTrackedEvents) {
-        await ctx.db.delete(trackedEvent._id)
-      }
-
-      for (const event of refreshEvents) {
-        await ctx.db.insert("trackedEvents", {
-          userId: portfolioStock.userId,
-          portfolioId: portfolioStock.portfolioId,
-          portfolioStockId: portfolioStock._id,
-          eventId: event._id,
-          notificationPreference: "none",
-          createdAt: args.now,
-        })
-      }
-
-      await ctx.db.patch(portfolioStock._id, {
-        lastPortfolioRefreshAt: args.now,
-        updatedAt: args.now,
-      })
-    }
-
-    return null
   },
 })

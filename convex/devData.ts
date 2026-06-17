@@ -9,7 +9,6 @@ import type { TableNames } from "./_generated/dataModel"
 const ALL_TABLES: readonly TableNames[] = [
   "anonymousUsage",
   "eventSources",
-  "trackedEvents",
   "portfolioStocks",
   "researchDiagnostics",
   "catalystEvents",
