@@ -238,4 +238,15 @@ export default defineSchema({
   })
     .index("by_event", ["eventId"])
     .index("by_url", ["url"]),
+
+  marketTapeSnapshot: defineTable({
+    items: v.array(
+      v.object({
+        label: v.string(),
+        price: v.number(),
+        changePct: v.number(),
+      }),
+    ),
+    updatedAt: v.number(),
+  }),
 })

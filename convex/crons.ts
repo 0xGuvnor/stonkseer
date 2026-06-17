@@ -10,4 +10,11 @@ crons.daily(
   internal.researchActions.refreshTrackedStocks,
 )
 
+crons.interval(
+  "refresh market tape quotes",
+  { minutes: 15 },
+  internal.marketTapeActions.refreshMarketTape,
+  {},
+)
+
 export default crons
