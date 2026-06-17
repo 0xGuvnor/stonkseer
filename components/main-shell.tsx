@@ -11,7 +11,11 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
-import { getMobileHeaderTitle } from "@/lib/app-navigation"
+import {
+  getMobileHeaderTitle,
+  isTickerResearchPath,
+} from "@/lib/app-navigation"
+import { cn } from "@/lib/utils"
 
 export function MainShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
@@ -19,13 +23,18 @@ export function MainShell({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider className="h-svh min-h-0 overflow-hidden">
       <AppSidebar />
-      <SidebarInset className="relative min-h-0 overflow-hidden md:peer-data-[variant=inset]:glow-brand">
-        <AppBackground className="md:rounded-2xl" />
+      <SidebarInset className="relative min-h-0 overflow-hidden">
+        <AppBackground />
         <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* Mobile-only: blurred, borderless top bar with the sidebar trigger */}
           <div className="glass z-40 flex h-12 shrink-0 items-center gap-2 px-3 md:hidden">
             <SidebarTrigger />
-            <p className="truncate text-sm font-semibold tracking-tight text-foreground">
+            <p
+              className={cn(
+                "truncate text-sm font-semibold tracking-tight text-foreground",
+                isTickerResearchPath(pathname) && "font-mono uppercase"
+              )}
+            >
               {getMobileHeaderTitle(pathname)}
             </p>
           </div>

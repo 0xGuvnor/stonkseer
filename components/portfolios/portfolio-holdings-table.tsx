@@ -94,7 +94,7 @@ export function PortfolioHoldingsTable({
               <TableCell className="align-top font-medium whitespace-normal">
                 <Link
                   href={`/${holding.symbol}`}
-                  className="text-primary hover:underline"
+                  className="font-mono text-primary hover:underline"
                 >
                   {holding.symbol}
                 </Link>

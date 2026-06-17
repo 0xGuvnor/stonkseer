@@ -1,13 +1,24 @@
-import { Briefcase, Search, type LucideIcon } from "lucide-react"
+import { Briefcase, type LucideIcon } from "lucide-react"
 
 export const APP_NAV = [
-  { href: "/", label: "Search", icon: Search },
   { href: "/portfolios", label: "Portfolios", icon: Briefcase },
 ] as const satisfies ReadonlyArray<{
   href: string
   label: string
   icon: LucideIcon
 }>
+
+/**
+ * Dispatched on `window` to ask the home page to focus its ticker search input.
+ * Lets the sidebar search trigger / Cmd+K focus the field when already on `/`.
+ */
+export const FOCUS_HOME_SEARCH_EVENT = "stonkseer:focus-search"
+
+/**
+ * Dispatched on `window` to ask the sidebar search input (shown on non-home
+ * routes) to focus itself, e.g. when Cmd+K is pressed away from home.
+ */
+export const FOCUS_SIDEBAR_SEARCH_EVENT = "stonkseer:focus-sidebar-search"
 
 const RESERVED_PATHS = new Set(["portfolios"])
 
