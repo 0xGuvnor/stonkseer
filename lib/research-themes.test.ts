@@ -1,0 +1,59 @@
+import { describe, expect, test } from "bun:test"
+
+import {
+  formatResearchBreadthExtractionBlock,
+  formatResearchTimingExtractionBlock,
+  formatResearchTimingReportBlock,
+} from "./research-themes"
+
+describe("formatResearchBreadthExtractionBlock", () => {
+  test("includes cadence and date-window guidance", () => {
+    const block = formatResearchBreadthExtractionBlock()
+
+    expect(block).toContain("cadence")
+    expect(block).toContain("date windows")
+  })
+})
+
+describe("formatResearchTimingExtractionBlock", () => {
+  test("requires structured timing fields over summary prose", () => {
+    const block = formatResearchTimingExtractionBlock()
+
+    expect(block).toContain("prose in summary alone does not satisfy timing")
+    expect(block).toContain("timingShape")
+    expect(block).toContain("periodKey")
+  })
+
+  test("maps quarter-named events to period and YYYY-Qn", () => {
+    const block = formatResearchTimingExtractionBlock()
+
+    expect(block).toContain("YYYY-Qn")
+    expect(block).toContain("2026-Q2")
+    expect(block).toContain("datePrecision to quarter")
+    expect(block).toContain("Vehicle Production & Deliveries Report")
+  })
+
+  test("reserves unknown only when no anchor exists", () => {
+    const block = formatResearchTimingExtractionBlock()
+
+    expect(block).toContain("Reserve timingShape unknown only when")
+    expect(block).toContain("timing unclear")
+  })
+
+  test("clarifies anti-inference scope", () => {
+    const block = formatResearchTimingExtractionBlock()
+
+    expect(block).toContain("12-month research horizon")
+    expect(block).toContain("Allowed: extracting 2026-Q2")
+  })
+})
+
+describe("formatResearchTimingReportBlock", () => {
+  test("asks hosted search to state fiscal quarters explicitly", () => {
+    const block = formatResearchTimingReportBlock()
+
+    expect(block).toContain("YYYY-Qn")
+    expect(block).toContain("vehicle production/delivery reports")
+    expect(block).toContain("timing unclear")
+  })
+})

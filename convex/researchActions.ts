@@ -52,7 +52,11 @@ import {
   type ResearchGatewayContext,
 } from "../lib/research-gateway-observability"
 import { RESEARCH_STRATEGY_VERSION } from "../lib/research-strategy"
-import { formatResearchBreadthExtractionBlock } from "../lib/research-themes"
+import {
+  formatResearchBreadthExtractionBlock,
+  formatResearchTimingExtractionBlock,
+  formatResearchTimingReportBlock,
+} from "../lib/research-themes"
 import {
   isTickerSymbolSyntaxValid,
   normalizeTickerSymbol,
@@ -977,7 +981,8 @@ function buildCatalystReportPrompt(
     "Look beyond official press releases and scheduled events: include qualitative and strategic milestones such as regional regulatory rollouts and approvals, product unveils and launches, manufacturing or capacity ramps, named internal programs, partnerships, supply or float milestones, and management targets discussed in credible reporting.",
     "Also include scheduled events (earnings, investor days, shareholder meetings, flagship conferences), but do not let them crowd out strategic milestones.",
     "Do not use ticker-specific event maps or preconceived event lists—derive everything from what current sources actually discuss.",
-    "Write the report as a list of distinct catalysts. For each catalyst give: a short name, expected timing (exact date, bounded window, deadline, fuzzy period, ongoing/open-ended, or timing unclear), whether it is confirmed, likely, or speculative, what it is, why it could move the stock, and the source URLs that support it.",
+    "Write the report as a list of distinct catalysts. For each catalyst give: a short name, expected timing (exact date, bounded window, deadline, fiscal quarter as YYYY-Qn, ongoing/open-ended, or timing unclear only when no anchor exists), whether it is confirmed, likely, or speculative, what it is, why it could move the stock, and the source URLs that support it.",
+    formatResearchTimingReportBlock(),
     "For ongoing or open-ended milestones, describe timing qualitatively (e.g. gradual rollout, under review) — do not invent a one-year end date from the research scope.",
     "Distinguish milestones already in progress (cite when they began if sources say so) from those expected to begin in the future.",
     "Cover every distinct material milestone family that credible sources discuss—do not collapse the report into one theme.",
@@ -1966,17 +1971,18 @@ async function buildAiEvents(
   const prompt = [
     `Today is ${new Date(now).toISOString().slice(0, 10)}. Merge the research below into structured upcoming catalyst events for ${symbol} over the next 12 months.`,
     companyContext ? `Company context (not evidence; do not cite as a source): ${companyContext}` : "",
-    "You are given (1) catalyst research reports written by independent web-search agents and (2) evidence snippets with verbatim page excerpts. The reports carry the synthesis and timing reasoning; the snippets carry verbatim quotes. Use both.",
+    "You are given (1) catalyst research reports written by independent web-search agents and (2) evidence snippets with verbatim page excerpts. The reports carry synthesis; the snippets carry verbatim quotes. Use both. When structuring timing fields, reconcile title and snippet anchors even if a report labeled timing unclear.",
     "Extract every distinct material catalyst the reports or snippets support: scheduled events (earnings, investor days, shareholder meetings, flagship and sell-side conferences) and qualitative or strategic milestones (regional regulatory rollouts and approvals, product unveils and launches, manufacturing or capacity ramps, named programs and sites, partnerships and strategic deals, lock-up or float/insider-supply milestones, management targets, legal decisions, clinical or data readouts, commercialization milestones).",
     formatResearchBreadthExtractionBlock(),
     "When sources describe the same dated or named real-world occasion (same flagship event, schedule, venue, or official page), output one merged event with the dominant eventType—put expected reveals in summary and whyItMatters instead of duplicate rows. Do not stitch conflicting share counts, percentages, or dates from different sources into one event; use separate rows or one lower-confidence row.",
     "Every event must cite at least one source whose URL appears in the reports or snippets. Never invent URLs. For each source quote: copy the snippet quote verbatim when a snippet with that URL exists; otherwise quote the specific report claim that the URL supports.",
-    "Use timingShape on every event: point for exact dates; closed_window only when both start and end are source-backed; from when the catalyst has not started yet and begins after windowStart; by for deadlines; period with periodKey (YYYY, YYYY-Qn, YYYY-Hn, YYYY-MM) for fuzzy quarters/months/years; open for milestones already underway or open-ended without a stated end (may use past windowStart or periodKey when sources cite when they began); unknown when timing is unclear.",
+    "Use timingShape on every event: point for exact dates; closed_window only when both start and end are source-backed; from when the catalyst has not started yet and begins after windowStart; by for deadlines; period with periodKey (YYYY, YYYY-Qn, YYYY-Hn, YYYY-MM) for fuzzy quarters/months/years; open for milestones already underway or open-ended without a stated end (may use past windowStart or periodKey when sources cite when they began); unknown only when no source-backed quarter, month, year, or date anchor exists in the title or cited sources — not when the event title names a quarter.",
+    formatResearchTimingExtractionBlock(),
     'Use expectedDate for timingShape point, windowStart/windowEnd for from/by/closed_window, and periodKey for period/open. datePrecision must be exactly one of: exact, month, quarter, half, unknown — never year, day, or other labels. Never set windowEnd to the 12-month research cutoff or windowStart to today\'s date unless a source explicitly anchors timing to today — those are research scope, not event properties.',
     "Use status 'likely' or 'speculative' with lower confidence when timing is inferred from targets, cadence, or reporting; prefer primary company, regulator, SEC, or exchange sources over commentary.",
     "Exclude stale past events unless a source clearly supports a future recurrence or future milestone.",
     "summary: 1–2 short factual sentences (what/when/context); do not repeat the title or argue importance. whyItMatters: one short sentence on why the stock might move (guidance, multiple, regulatory binary, demand, dilution risk).",
-    `Use null for unknown company, exchange, publication date, or event date fields. Return up to ${MAX_CATALYST_EVENTS} events, ordered chronologically when timing is known.`,
+    `Use null for unknown company, exchange, or publication date fields. For event timing, use null only when genuinely absent — never leave periodKey null when the title or sources name Qn YYYY. Return up to ${MAX_CATALYST_EVENTS} events, ordered chronologically when timing is known.`,
     "Output format: return one JSON object only (companyName, exchange, events); no markdown or commentary.",
     "Research reports:",
     reportsBlock,
@@ -1988,7 +1994,7 @@ async function buildAiEvents(
     const { output } = await generateText({
       model,
       system:
-        "Merge the research into catalyst events. Return a single valid JSON object matching the schema (companyName, exchange, events).",
+        "Merge the research into catalyst events. Return a single valid JSON object matching the schema (companyName, exchange, events). Populate timingShape and periodKey/expectedDate/window fields on every event; prose in summary alone does not satisfy timing.",
       providerOptions: buildExtractionGatewayProviderOptions(gatewayCtx),
       output: Output.object({
         schema: catalystResearchAiSchema,

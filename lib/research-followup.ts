@@ -48,6 +48,7 @@ export function buildFollowUpQueryPrompt(
   return [
     `Today is ${today}. Below are research reports about upcoming stock catalysts for ${companyLabel}, written by independent search agents.`,
     "Identify the named programs, products, projects, factories or sites, regulatory processes, and milestones that look material to the stock but lack specific timing, official confirmation, or strong sourcing in the reports.",
+    "When reports mention quarterly vehicle production/delivery reports or similar operational disclosures by quarter but without an expected release month or window, include targeted queries to surface when those reports are typically published.",
     `Write up to ${maxQueries} short web search queries that would surface dates, official confirmations, or recent credible reporting for those themes. Derive every query strictly from the report content; do not use generic templates or themes the reports never mention.`,
     "Return one query per line with no numbering, bullets, quotes, or commentary. If the reports already cover everything with solid timing and sources, return fewer queries or none.",
     "Research reports:",

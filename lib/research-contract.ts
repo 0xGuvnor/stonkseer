@@ -211,7 +211,7 @@ export const catalystEventAiSchema = z.object({
       "One primary label per distinct real-world milestone. If a flagship conference, keynote, or investor forum is also where launches are expected, prefer conference or investor_day over a second product or launch row for the same dates or official page.",
     ),
   timingShape: timingShapeSchema.describe(
-    "Timing semantics: point=exact date; closed_window=source-backed start and end; from=has not started yet, begins after windowStart; by=deadline only; period=fuzzy period via periodKey; open=already underway or open-ended, may use past windowStart/periodKey; unknown=no dates.",
+    "Timing semantics: point=exact date; closed_window=source-backed start and end; from=has not started yet, begins after windowStart; by=deadline only; period=fuzzy period via periodKey (required when title or sources name a quarter, e.g. Q2 2026 deliveries report → period + 2026-Q2); open=already underway or open-ended, may use past windowStart/periodKey; unknown=only when no year, quarter, month, or date anchor appears in title or cited sources.",
   ),
   expectedDate: z
     .string()
@@ -233,7 +233,7 @@ export const catalystEventAiSchema = z.object({
     .string()
     .nullable()
     .describe(
-      "Fuzzy period YYYY, YYYY-Qn, YYYY-Hn, or YYYY-MM when timingShape is period or open, otherwise null",
+      "Fuzzy period YYYY, YYYY-Qn, YYYY-Hn, or YYYY-MM when timingShape is period or open, otherwise null. Canonical quarter form: 2026-Q2 (capital Q). For 'Q2 2026 Vehicle Production & Deliveries Report', use 2026-Q2 — the quarter the data covers, not the release month.",
     ),
   datePrecision: datePrecisionAiSchema.describe(
     'Must be exactly one of: "exact", "month", "quarter", "half", "unknown". Do not use "year", "day", or other labels.',
