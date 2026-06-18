@@ -8,14 +8,13 @@ import {
 } from "convex/react"
 import Link from "next/link"
 import { useState } from "react"
-import { Briefcase, Loader2, RefreshCw, Sparkles } from "lucide-react"
+import { Briefcase, Loader2, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import { showConvexMutationErrorToast } from "@/lib/convex-mutation-error"
 import { isAdminUser } from "@/lib/admin"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -54,27 +53,44 @@ function StatusBadge({
   cacheHit?: boolean
 }) {
   const isLive = status === "queued" || status === "running"
-  const isDone = status === "completed"
   const isError = status === "failed" || status === "error"
 
   return (
-    <span className="flex flex-wrap items-center gap-1.5">
-      <Badge
-        variant={isError ? "destructive" : isDone ? "default" : "secondary"}
-        className={cn("capitalize", isDone && "bg-gradient-brand border-0")}
+    <span className="flex flex-wrap items-center gap-2">
+      <span
+        className={cn(
+          "inline-flex items-center gap-2 rounded-full border px-3 py-1",
+          isError
+            ? "border-destructive/40 bg-destructive/10"
+            : "border-border bg-card/60",
+        )}
       >
         {isLive ? (
           <span className="relative flex size-1.5">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-70" />
-            <span className="relative inline-flex size-1.5 rounded-full bg-current" />
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-70" />
+            <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
           </span>
-        ) : null}
-        {status}
-      </Badge>
+        ) : (
+          <span
+            className={cn(
+              "size-1.5 rounded-full",
+              isError ? "bg-destructive" : "animate-signal bg-primary",
+            )}
+          />
+        )}
+        <span
+          className={cn(
+            "font-mono text-[11px] font-medium tracking-wide capitalize",
+            isError ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          {status}
+        </span>
+      </span>
       {cacheHit ? (
-        <Badge variant="outline" className="font-normal text-muted-foreground">
+        <span className="font-mono text-[11px] text-muted-foreground">
           Cached
-        </Badge>
+        </span>
       ) : null}
     </span>
   )
@@ -93,12 +109,13 @@ function ResearchRunHeading({
     <>
       {companyName ? (
         <>
-          {companyName} (<span className="font-mono">{symbol}</span>)
+          {companyName} (
+          <span className="font-mono text-primary">{symbol}</span>)
         </>
       ) : (
-        <span className="font-mono">{symbol}</span>
+        <span className="font-mono text-primary">{symbol}</span>
       )}{" "}
-      <span className="text-muted-foreground">{suffix}</span>
+      {suffix}
     </>
   )
 }
@@ -118,9 +135,8 @@ function ResultsSkeleton({
     <div className={RESULTS_SHELL}>
       <div className="glass rounded-2xl p-5 ring-1 ring-border/60 sm:p-6">
         <div className="flex items-center gap-3">
-          <Sparkles className="size-5 shrink-0 text-primary" aria-hidden />
           <div className="space-y-2">
-            <p className="text-lg font-semibold tracking-tight">
+            <p className="font-heading text-lg font-semibold tracking-tight sm:text-xl">
               <ResearchRunHeading
                 symbol={symbol}
                 companyName={companyName}
@@ -350,17 +366,12 @@ export function ResearchRunResults({
       {/* Header */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
-          <h1 className="flex items-center gap-2.5 font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
-            <span className="bg-gradient-brand flex size-9 shrink-0 items-center justify-center rounded-xl text-primary-foreground shadow-sm">
-              <Sparkles className="size-4.5" aria-hidden />
-            </span>
-            <span>
-              <ResearchRunHeading
-                symbol={results.run.symbol}
-                companyName={results.companyName}
-                suffix="catalysts"
-              />
-            </span>
+          <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
+            <ResearchRunHeading
+              symbol={results.run.symbol}
+              companyName={results.companyName}
+              suffix="catalysts"
+            />
           </h1>
           <StatusBadge
             status={results.run.status}
@@ -387,7 +398,7 @@ export function ResearchRunResults({
             <Button
               onClick={handleSave}
               disabled={saveDisabled}
-              className="bg-gradient-brand w-full cursor-pointer text-primary-foreground shadow-sm transition-transform hover:scale-[1.02] hover:brightness-105 sm:w-auto"
+              className="w-full cursor-pointer bg-foreground text-background hover:bg-foreground/90 sm:w-auto"
             >
               {isSaving ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -413,10 +424,13 @@ export function ResearchRunResults({
 
         {isCompletedWithEvents ? (
           <Show when="signed-in">
-            <div className="glass space-y-4 rounded-2xl p-4 ring-1 ring-border/60 sm:p-5">
+            <div className="space-y-4 rounded-xl border border-border bg-card/40 p-4 sm:p-5">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="portfolio-default-name-results">
+                  <Label
+                    htmlFor="portfolio-default-name-results"
+                    className="font-mono text-[10px] tracking-widest text-muted-foreground/70 uppercase"
+                  >
                     Default portfolio name
                   </Label>
                   <Input
@@ -424,10 +438,14 @@ export function ResearchRunResults({
                     value={portfolioName}
                     onChange={(event) => setPortfolioName(event.target.value)}
                     disabled={!isCreatingNewPortfolio}
+                    className="border-border bg-card/80"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="portfolio-save-target-results">
+                  <Label
+                    htmlFor="portfolio-save-target-results"
+                    className="font-mono text-[10px] tracking-widest text-muted-foreground/70 uppercase"
+                  >
                     Save target
                   </Label>
                   <Select
@@ -436,7 +454,7 @@ export function ResearchRunResults({
                   >
                     <SelectTrigger
                       id="portfolio-save-target-results"
-                      className="w-full min-w-0"
+                      className="w-full min-w-0 border-border bg-card/80"
                     >
                       <SelectValue placeholder="Choose a portfolio" />
                     </SelectTrigger>
@@ -477,7 +495,7 @@ export function ResearchRunResults({
         ) : null}
 
         {results.events.length > 0 ? (
-          <CatalystEventsTable events={sortedCatalystEvents} />
+          <CatalystEventsTable events={sortedCatalystEvents} variant="results" />
         ) : results.run.status === "completed" && !results.run.error ? (
           <div className="glass rounded-2xl p-8 text-center ring-1 ring-border/60">
             <p className="text-sm text-muted-foreground">
