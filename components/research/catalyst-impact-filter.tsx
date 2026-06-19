@@ -1,13 +1,8 @@
 "use client"
 
-import {
-  SignalHigh,
-  SignalLow,
-  SignalMedium,
-  type LucideIcon,
-} from "lucide-react"
-
+import { ImpactBars, impactLabelClass } from "@/components/research/impact-meter"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { formatExpectedImpact } from "@/lib/expected-impact-display"
 import {
   ALL_EXPECTED_IMPACTS,
   type ExpectedImpact,
@@ -17,28 +12,30 @@ import { cn } from "@/lib/utils"
 const IMPACT_OPTIONS: {
   value: ExpectedImpact
   label: string
-  Icon: LucideIcon
-  activeClassName: string
+  onTextClassName: string
 }[] = [
   {
     value: "high",
     label: "High",
-    Icon: SignalHigh,
-    activeClassName: "data-[state=on]:text-primary",
+    onTextClassName: "data-[state=on]:text-primary",
   },
   {
     value: "medium",
     label: "Medium",
-    Icon: SignalMedium,
-    activeClassName: "data-[state=on]:text-foreground",
+    onTextClassName: "data-[state=on]:text-foreground",
   },
   {
     value: "low",
     label: "Low",
-    Icon: SignalLow,
-    activeClassName: "data-[state=on]:text-muted-foreground",
+    onTextClassName: "data-[state=on]:text-muted-foreground",
   },
 ]
+
+const TOGGLE_ITEM_CLASSNAME = cn(
+  "rounded-md",
+  "data-[state=on]:bg-primary/15 data-[state=on]:border-primary/50",
+  "data-[state=off]:border-border/40 data-[state=off]:opacity-50",
+)
 
 export type CatalystImpactFilterProps = {
   selected: ReadonlySet<ExpectedImpact>
@@ -46,6 +43,37 @@ export type CatalystImpactFilterProps = {
   filteredCount: number
   totalCount: number
   variant?: "default" | "results"
+}
+
+function ImpactToggleContent({
+  value,
+  label,
+  variant,
+}: {
+  value: ExpectedImpact
+  label: string
+  variant: "default" | "results"
+}) {
+  if (variant === "results") {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <ImpactBars impact={value} />
+        <span className={cn("font-mono text-xs", impactLabelClass(value))}>
+          {label}
+        </span>
+      </span>
+    )
+  }
+
+  const presentation = formatExpectedImpact(value)
+  const Icon = presentation.Icon
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {Icon ? <Icon aria-hidden className="size-3.5 shrink-0" /> : null}
+      {label}
+    </span>
+  )
 }
 
 export function CatalystImpactFilter({
@@ -75,7 +103,7 @@ export function CatalystImpactFilter({
               : "text-xs font-semibold tracking-wider text-muted-foreground uppercase",
           )}
         >
-          {isResults ? "Impact filter" : "Expected impact"}
+          Expected impact
         </span>
         <ToggleGroup
           type="multiple"
@@ -86,15 +114,18 @@ export function CatalystImpactFilter({
           aria-label="Filter by expected impact"
           className="rounded-md"
         >
-          {IMPACT_OPTIONS.map(({ value, label, Icon, activeClassName }) => (
+          {IMPACT_OPTIONS.map(({ value, label, onTextClassName }) => (
             <ToggleGroupItem
               key={value}
               value={value}
               aria-label={label}
-              className={cn("rounded-md", activeClassName)}
+              className={cn(TOGGLE_ITEM_CLASSNAME, onTextClassName)}
             >
-              <Icon aria-hidden className="size-3.5" />
-              {label}
+              <ImpactToggleContent
+                value={value}
+                label={label}
+                variant={variant}
+              />
             </ToggleGroupItem>
           ))}
         </ToggleGroup>

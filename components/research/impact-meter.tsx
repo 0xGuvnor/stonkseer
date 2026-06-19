@@ -1,7 +1,7 @@
 import type { CatalystEventView } from "@/types/research-ui"
 import { cn } from "@/lib/utils"
 
-type ImpactLevel = NonNullable<CatalystEventView["expectedImpact"]>
+export type ImpactLevel = NonNullable<CatalystEventView["expectedImpact"]>
 
 const BAR_COUNT = 3
 
@@ -15,7 +15,7 @@ function barFillClass(level: ImpactLevel, barIndex: number): string {
   return barIndex === 0 ? "bg-foreground/25" : "bg-foreground/10"
 }
 
-function impactLabelClass(level: ImpactLevel): string {
+export function impactLabelClass(level: ImpactLevel): string {
   if (level === "high") {
     return "text-primary"
   }
@@ -23,6 +23,28 @@ function impactLabelClass(level: ImpactLevel): string {
     return "text-foreground/80"
   }
   return "text-muted-foreground"
+}
+
+export function ImpactBars({
+  impact,
+  className,
+}: {
+  impact: ImpactLevel
+  className?: string
+}) {
+  return (
+    <span
+      className={cn("flex items-end gap-0.5", className)}
+      aria-hidden
+    >
+      {Array.from({ length: BAR_COUNT }, (_, barIndex) => (
+        <span
+          key={barIndex}
+          className={cn("h-3 w-1 rounded-sm", barFillClass(impact, barIndex))}
+        />
+      ))}
+    </span>
+  )
 }
 
 export function ImpactMeter({
@@ -38,14 +60,7 @@ export function ImpactMeter({
 
   return (
     <span className="inline-flex items-center gap-2">
-      <span className="flex items-end gap-0.5" aria-hidden>
-        {Array.from({ length: BAR_COUNT }, (_, barIndex) => (
-          <span
-            key={barIndex}
-            className={cn("h-3 w-1 rounded-sm", barFillClass(impact, barIndex))}
-          />
-        ))}
-      </span>
+      <ImpactBars impact={impact} />
       <span className={cn("font-mono text-xs", impactLabelClass(impact))}>
         {label}
       </span>

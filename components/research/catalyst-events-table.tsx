@@ -2,13 +2,7 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import {
-  ExternalLink,
-  SignalHigh,
-  SignalLow,
-  SignalMedium,
-  type LucideIcon,
-} from "lucide-react"
+import { ExternalLink } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -31,6 +25,7 @@ import {
   sortCatalystEventsByAnchor,
   type ExpectedImpact,
 } from "@/lib/research-results-utils"
+import { formatExpectedImpact } from "@/lib/expected-impact-display"
 import { formatSourceLinkLabel } from "@/lib/source-link-label"
 import { cn } from "@/lib/utils"
 import type { CatalystEventView } from "@/types/research-ui"
@@ -42,32 +37,6 @@ export type CatalystEventsTableProps = {
   className?: string
   now?: number
   variant?: "default" | "results"
-}
-
-type ExpectedImpactPresentation = {
-  label: string
-  className: string
-  Icon?: LucideIcon
-}
-
-function formatExpectedImpact(
-  impact: CatalystEventView["expectedImpact"] | undefined,
-): ExpectedImpactPresentation {
-  if (!impact) {
-    return { label: "—", className: "text-muted-foreground" }
-  }
-
-  const label = impact.charAt(0).toUpperCase() + impact.slice(1)
-
-  if (impact === "low") {
-    return { label, className: "text-muted-foreground", Icon: SignalLow }
-  }
-
-  if (impact === "high") {
-    return { label, className: "font-medium text-primary", Icon: SignalHigh }
-  }
-
-  return { label, className: "", Icon: SignalMedium }
 }
 
 const ONGOING_SUFFIX = " (ongoing)"
@@ -321,7 +290,7 @@ export function CatalystEventsTable({
               Strategic significance
             </TableHead>
             <TableHead className={cn("w-24 min-w-24", headerClassName)}>
-              {isResults ? "Impact" : "Expected impact"}
+              Expected impact
             </TableHead>
             <TableHead
               className={cn(
