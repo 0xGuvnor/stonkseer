@@ -161,6 +161,8 @@ export default defineSchema({
     carriedForwardCount: v.optional(v.number()),
     reconcileDroppedCount: v.optional(v.number()),
     reconcileAiReviewCount: v.optional(v.number()),
+    inrunDedupeMergedCount: v.optional(v.number()),
+    inrunDedupeAiReviewCount: v.optional(v.number()),
     queries: v.array(
       v.object({
         bucket: v.string(),

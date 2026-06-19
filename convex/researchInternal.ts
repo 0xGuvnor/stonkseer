@@ -203,6 +203,8 @@ export const recordResearchDiagnostics = internalMutation({
     carriedForwardCount: v.optional(v.number()),
     reconcileDroppedCount: v.optional(v.number()),
     reconcileAiReviewCount: v.optional(v.number()),
+    inrunDedupeMergedCount: v.optional(v.number()),
+    inrunDedupeAiReviewCount: v.optional(v.number()),
     queries: v.array(searchDiagnosticInput),
   },
   returns: v.null(),
@@ -223,6 +225,8 @@ export const recordResearchDiagnostics = internalMutation({
       carriedForwardCount: args.carriedForwardCount,
       reconcileDroppedCount: args.reconcileDroppedCount,
       reconcileAiReviewCount: args.reconcileAiReviewCount,
+      inrunDedupeMergedCount: args.inrunDedupeMergedCount,
+      inrunDedupeAiReviewCount: args.inrunDedupeAiReviewCount,
       queries: args.queries,
       createdAt: Date.now(),
     })

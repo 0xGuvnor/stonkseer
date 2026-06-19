@@ -214,10 +214,10 @@ export const catalystEventAiSchema = z.object({
       "other",
     ])
     .describe(
-      "One primary label per distinct real-world milestone. If a flagship conference, keynote, or investor forum is also where launches are expected, prefer conference or investor_day over a second product or launch row for the same dates or official page.",
+      "One primary label per distinct real-world milestone. Open regulatory investigations, recall probes, and litigation are each a single event until resolved — do not split the same agency proceeding by editorial angle. If a flagship conference, keynote, or investor forum is also where launches are expected, prefer conference or investor_day over a second product or launch row for the same dates or official page.",
     ),
   timingShape: timingShapeSchema.describe(
-    "Timing semantics: point=exact date; closed_window=source-backed start and end; from=has not started yet, begins after windowStart; by=deadline only; period=fuzzy period via periodKey (required when title or sources name a quarter, e.g. Q2 2026 deliveries report → period + 2026-Q2); open=already underway or open-ended, may use past windowStart/periodKey; unknown=only when no year, quarter, month, or date anchor appears in title or cited sources.",
+    "Timing semantics: point=exact date; closed_window=source-backed start and end; from=has not started yet, begins after windowStart; by=deadline only; period=fuzzy period via periodKey (required when title or sources name a quarter, e.g. Q2 2026 deliveries report → period + 2026-Q2); open=already underway or open-ended, may use past windowStart/periodKey; unknown=only when no year, quarter, month, or date anchor appears in title or cited sources. Do not emit both open and unknown for the same ongoing proceeding.",
   ),
   expectedDate: z
     .string()
@@ -263,7 +263,7 @@ export const catalystResearchAiSchema = z.object({
     .array(catalystEventAiSchema)
     .max(MAX_CATALYST_EVENTS)
     .describe(
-      "Distinct catalysts only; merge overlapping evidence about the same dated or named occurrence into a single event.",
+      "Distinct catalysts only; merge overlapping evidence about the same dated or named occurrence, regulatory proceeding, investigation ID, or litigation into a single event with all sources.",
     ),
 })
 

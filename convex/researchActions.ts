@@ -46,6 +46,12 @@ import {
   runFollowUpSearches,
 } from "../lib/research-followup"
 import { verifyAndFilterEvents } from "../lib/research-grounding"
+import { dedupeIntraRunCatalystEvents } from "../lib/research-inrun-dedupe"
+import {
+  formatResearchProceedingExtractionSelfCheck,
+  formatResearchProceedingMergeBlock,
+  formatResearchProceedingReportBlock,
+} from "../lib/research-proceeding-merge"
 import {
   buildPriorThemeFollowUpQueries,
   getPriorThemeFollowUpQueryBudget,
@@ -991,6 +997,7 @@ function buildCatalystReportPrompt(
     "Do not use ticker-specific event maps or preconceived event lists—derive everything from what current sources actually discuss.",
     "Write the report as a list of distinct catalysts. For each catalyst give: a short name, expected timing (exact date, bounded window, deadline, fiscal quarter as YYYY-Qn, ongoing/open-ended, or timing unclear only when no anchor exists), whether it is confirmed, likely, or speculative, what it is, why it could move the stock, and the source URLs that support it.",
     formatResearchTimingReportBlock(),
+    formatResearchProceedingReportBlock(),
     "For ongoing or open-ended milestones, describe timing qualitatively (e.g. gradual rollout, under review) — do not invent a one-year end date from the research scope.",
     "Distinguish milestones already in progress (cite when they began if sources say so) from those expected to begin in the future.",
     "Cover every distinct material milestone family that credible sources discuss—do not collapse the report into one theme.",
@@ -2021,6 +2028,8 @@ async function buildAiEvents(
     "Extract every distinct material catalyst the reports or snippets support: scheduled events (earnings, investor days, shareholder meetings, flagship and sell-side conferences) and qualitative or strategic milestones (regional regulatory rollouts and approvals, product unveils and launches, manufacturing or capacity ramps, named programs and sites, partnerships and strategic deals, lock-up or float/insider-supply milestones, management targets, legal decisions, clinical or data readouts, commercialization milestones).",
     formatResearchBreadthExtractionBlock(),
     "When sources describe the same dated or named real-world occasion (same flagship event, schedule, venue, or official page), output one merged event with the dominant eventType—put expected reveals in summary and whyItMatters instead of duplicate rows. Do not stitch conflicting share counts, percentages, or dates from different sources into one event; use separate rows or one lower-confidence row.",
+    formatResearchProceedingMergeBlock(),
+    formatResearchProceedingExtractionSelfCheck(),
     "Every event must cite at least one source whose URL appears in the reports or snippets. Never invent URLs. For each source quote: copy the snippet quote verbatim when a snippet with that URL exists; otherwise quote the specific report claim that the URL supports.",
     "Use timingShape on every event: point for exact dates; closed_window only when both start and end are source-backed; from when the catalyst has not started yet and begins after windowStart; by for deadlines; period with periodKey (YYYY, YYYY-Qn, YYYY-Hn, YYYY-MM) for fuzzy quarters/months/years; open for milestones already underway or open-ended without a stated end (may use past windowStart or periodKey when sources cite when they began); unknown only when no source-backed quarter, month, year, or date anchor exists in the title or cited sources — not when the event title names a quarter.",
     formatResearchTimingExtractionBlock(),
@@ -2040,7 +2049,7 @@ async function buildAiEvents(
     const { output } = await generateText({
       model,
       system:
-        "Merge the research into catalyst events. Return a single valid JSON object matching the schema (companyName, exchange, events). Populate timingShape and periodKey/expectedDate/window fields on every event; prose in summary alone does not satisfy timing.",
+        "Merge the research into catalyst events. Return a single valid JSON object matching the schema (companyName, exchange, events). Populate timingShape and periodKey/expectedDate/window fields on every event; prose in summary alone does not satisfy timing. Before returning JSON, review the events list and merge rows describing the same named proceeding, investigation, or litigation.",
       providerOptions: buildExtractionGatewayProviderOptions(gatewayCtx),
       output: Output.object({
         schema: catalystResearchAiSchema,
@@ -2239,6 +2248,14 @@ export const runResearch = internalAction({
       }
 
       rawEvents = mergeBaselineEarningsEvents(rawEvents, finnhub.baselineEvents)
+
+      const inRunDeduped = await dedupeIntraRunCatalystEvents({
+        events: rawEvents,
+        gatewayCtx,
+        symbol: run.symbol,
+      })
+      rawEvents = inRunDeduped.events
+
       const verified = verifyAndFilterEvents(
         rawEvents,
         evidenceSnippets,
@@ -2287,6 +2304,8 @@ export const runResearch = internalAction({
           carriedForwardCount: reconciled.stats.carriedForwardCount,
           reconcileDroppedCount: reconciled.stats.reconcileDroppedCount,
           reconcileAiReviewCount: reconciled.stats.reconcileAiReviewCount,
+          inrunDedupeMergedCount: inRunDeduped.stats.mergedCount,
+          inrunDedupeAiReviewCount: inRunDeduped.stats.aiReviewCount,
           queries: [...hostedResearch.diagnostics, ...followUp.diagnostics],
         }
       )

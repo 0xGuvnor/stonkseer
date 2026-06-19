@@ -8,6 +8,7 @@ export type ResearchGatewayLeg =
   | "followup-queries"
   | "merge-extraction"
   | "reconcile-carryforward"
+  | "inrun-dedupe"
 
 export type ResearchGatewaySource =
   | "anonymous"
