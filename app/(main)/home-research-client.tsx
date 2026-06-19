@@ -26,14 +26,14 @@ import {
 } from "@/lib/research-form-schema"
 
 const POPULAR_TICKERS = [
-  "AAPL",
   "TSLA",
+  "SPCX",
   "NVDA",
   "MSFT",
-  "META",
+  "SNDK",
   "GOOGL",
   "AMD",
-  "AMZN",
+  "MU",
 ] as const
 
 export function HomeResearchClient() {
@@ -76,14 +76,14 @@ export function HomeResearchClient() {
         <div className="mx-auto flex w-full max-w-xl flex-col items-center text-center">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1">
-            <span className="size-1.5 animate-signal rounded-full bg-primary" />
+            <span className="animate-signal size-1.5 rounded-full bg-primary" />
             <span className="font-mono text-[11px] font-medium tracking-wide text-muted-foreground">
               AI-powered catalyst research
             </span>
           </div>
 
           {/* Headline */}
-          <h1 className="mt-6 text-balance text-center font-heading text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
+          <h1 className="mt-6 text-center font-heading text-5xl leading-[1.05] font-semibold tracking-tight text-balance text-foreground sm:text-6xl">
             What&apos;s moving
             <br />
             your <span className="text-primary italic">stonks?</span>
@@ -118,7 +118,7 @@ export function HomeResearchClient() {
                         <Input
                           aria-label="Ticker symbol"
                           autoComplete="off"
-                          className="h-auto flex-1 border-0 bg-transparent px-0 py-3 font-mono text-lg text-foreground uppercase shadow-none ring-0 outline-none placeholder:normal-case placeholder:text-muted-foreground/60 focus-visible:border-0 focus-visible:ring-0 aria-invalid:border-transparent aria-invalid:ring-0 md:text-lg dark:bg-transparent dark:aria-invalid:border-transparent dark:aria-invalid:ring-0"
+                          className="h-auto flex-1 border-0 bg-transparent px-0 py-3 font-mono text-lg text-foreground uppercase shadow-none ring-0 outline-none placeholder:text-muted-foreground/60 placeholder:normal-case focus-visible:border-0 focus-visible:ring-0 aria-invalid:border-transparent aria-invalid:ring-0 md:text-lg dark:bg-transparent dark:aria-invalid:border-transparent dark:aria-invalid:ring-0"
                           maxLength={10}
                           placeholder="Enter a ticker, e.g. AAPL"
                           {...field}
