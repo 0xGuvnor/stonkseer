@@ -5,6 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
 
 import { useIsMobile } from "@/hooks/use-mobile"
+import { CmdBHint } from "@/components/cmd-k-hint"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -282,14 +283,7 @@ function SidebarTrigger({
         <span>
           {state === "collapsed" ? "Expand sidebar" : "Collapse sidebar"}
         </span>
-        <kbd
-          data-slot="kbd"
-          className="inline-flex items-center gap-1 font-mono"
-        >
-          <span className="text-sm leading-none">⌘</span>
-          <span className="text-[11px] leading-none">+</span>
-          <span className="text-[11px] leading-none">B</span>
-        </kbd>
+        <CmdBHint />
       </TooltipContent>
     </Tooltip>
   )
