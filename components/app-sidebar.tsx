@@ -5,7 +5,14 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { type FormEvent, useEffect, useRef, useState } from "react"
 import { Loader2, LogIn, Search } from "lucide-react"
-import { Show, SignInButton, UserButton, useAuth, useUser } from "@clerk/nextjs"
+import {
+  Show,
+  SignInButton,
+  UNSAFE_PortalProvider,
+  UserButton,
+  useAuth,
+  useUser,
+} from "@clerk/nextjs"
 import { useAction, useConvexAuth, useQuery } from "convex/react"
 import { toast } from "sonner"
 
@@ -45,7 +52,10 @@ const NAV_ITEM_CLASSES = cn(
 export function AppSidebar() {
   const pathname = usePathname()
   const { user } = useUser()
+  const { isLoaded, isSignedIn } = useAuth()
   const { state, isMobile, open, setOpen, setOpenMobile } = useSidebar()
+  const mobileClerkPortalRef = useRef<HTMLDivElement>(null)
+  const wasSignedInRef = useRef(false)
   const displayName =
     user?.fullName ?? user?.firstName ?? user?.username ?? "Account"
   // Icon mode = collapsed desktop (not the mobile Sheet state)
@@ -55,6 +65,14 @@ export function AppSidebar() {
   function closeMobileSidebar() {
     if (isMobile) setOpenMobile(false)
   }
+
+  useEffect(() => {
+    if (!isLoaded) return
+    if (isMobile && wasSignedInRef.current && !isSignedIn) {
+      setOpenMobile(false)
+    }
+    wasSignedInRef.current = isSignedIn
+  }, [isLoaded, isMobile, isSignedIn, setOpenMobile])
 
   // Global Cmd+K: focus the home hero search on `/`, otherwise expand the
   // sidebar and focus its search input.
@@ -214,16 +232,21 @@ export function AppSidebar() {
             </Show>
             <Show when="signed-in">
               <div
+                ref={isMobile ? mobileClerkPortalRef : undefined}
                 className={cn(
                   "flex items-center rounded-lg px-3 py-2 text-sm text-sidebar-foreground",
                   isIconMode ? "justify-center" : "gap-3"
                 )}
               >
-                <UserButton
-                  appearance={{
-                    elements: { avatarBox: "size-5" },
-                  }}
-                />
+                {isMobile ? (
+                  <UNSAFE_PortalProvider
+                    getContainer={() => mobileClerkPortalRef.current}
+                  >
+                    <SidebarUserButton />
+                  </UNSAFE_PortalProvider>
+                ) : (
+                  <SidebarUserButton />
+                )}
                 {!isIconMode && (
                   <span className="truncate font-medium">{displayName}</span>
                 )}
@@ -233,6 +256,20 @@ export function AppSidebar() {
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
+  )
+}
+
+function SidebarUserButton() {
+  return (
+    <UserButton
+      appearance={{
+        elements: {
+          avatarBox: "size-5",
+          userButtonPopoverCard: { pointerEvents: "initial" },
+          userButtonPopoverRootBox: { pointerEvents: "auto" },
+        },
+      }}
+    />
   )
 }
 
