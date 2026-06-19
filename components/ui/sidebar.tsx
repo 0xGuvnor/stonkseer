@@ -255,9 +255,9 @@ function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, state, isMobile } = useSidebar()
 
-  return (
+  const button = (
     <Button
       data-sidebar="trigger"
       data-slot="sidebar-trigger"
@@ -273,6 +273,25 @@ function SidebarTrigger({
       <PanelLeftIcon />
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
+  )
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="right" align="center" hidden={isMobile}>
+        <span>
+          {state === "collapsed" ? "Expand sidebar" : "Collapse sidebar"}
+        </span>
+        <kbd
+          data-slot="kbd"
+          className="inline-flex items-center gap-1 font-mono"
+        >
+          <span className="text-sm leading-none">⌘</span>
+          <span className="text-[11px] leading-none">+</span>
+          <span className="text-[11px] leading-none">B</span>
+        </kbd>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

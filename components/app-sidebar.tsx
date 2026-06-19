@@ -164,7 +164,7 @@ export function AppSidebar() {
 
       {/* ── Search ─────────────────────────────────────────── */}
       <SidebarContent>
-        <SidebarGroup className={cn(isIconMode ? "px-1 pb-1" : "px-2 pb-1")}>
+        <SidebarGroup className={isIconMode ? undefined : "px-2 pb-1"}>
           <SidebarGroupContent>
             <SidebarSearch
               isHome={isHome}
@@ -311,15 +311,19 @@ function SidebarSearch({
   // Collapsed desktop: compact icon button (no room for label/input)
   if (isIconMode) {
     return (
-      <SidebarMenuButton
-        tooltip="Search"
-        aria-label="Search a ticker"
-        className="cursor-pointer rounded-md"
-        onClick={focusHomeSearch}
-      >
-        <Search />
-        <span>Search</span>
-      </SidebarMenuButton>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            tooltip="Search"
+            aria-label="Search a ticker"
+            className="cursor-pointer rounded-md"
+            onClick={focusHomeSearch}
+          >
+            <Search />
+            <span>Search</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
     )
   }
 
