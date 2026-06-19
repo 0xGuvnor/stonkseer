@@ -120,7 +120,7 @@ export function HomeResearchClient() {
                           autoComplete="off"
                           className="h-auto flex-1 border-0 bg-transparent px-0 py-3 font-mono text-lg text-foreground uppercase shadow-none ring-0 outline-none placeholder:text-muted-foreground/60 placeholder:normal-case focus-visible:border-0 focus-visible:ring-0 aria-invalid:border-transparent aria-invalid:ring-0 md:text-lg dark:bg-transparent dark:aria-invalid:border-transparent dark:aria-invalid:ring-0"
                           maxLength={10}
-                          placeholder="Enter a ticker, e.g. AAPL"
+                          placeholder="Enter a ticker"
                           {...field}
                           ref={(element) => {
                             field.ref(element)
