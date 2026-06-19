@@ -5,9 +5,12 @@ import {
   buildResearchHorizonEnd,
   buildResearchRunDate,
   eventTimingLabel,
+  formatTimingFragment,
+  formatQuarterLabel,
   isWithinResearchHorizon,
   normalizeCatalystEventTiming,
   parseAnchorDate,
+  parseIsoPrefixToLocalDate,
   parsePeriodKey,
   parseSortAnchor,
 } from "./catalyst-timing"
@@ -63,8 +66,21 @@ describe("parsePeriodKey", () => {
 
   test("parses month", () => {
     const parsed = parsePeriodKey("2026-03")
-    expect(parsed?.label).toBe("Mar 2026")
+    expect(parsed?.label).toBe("March 2026")
     expect(parsed?.anchorStart).toEqual(new Date(2026, 2, 1))
+  })
+})
+
+describe("formatTimingFragment", () => {
+  test("formats month-only ISO strings with full month names", () => {
+    expect(formatTimingFragment("2026-04")).toBe("April 2026")
+    expect(formatTimingFragment("2026-07-01")).toBe("1st Jul 2026")
+  })
+})
+
+describe("parseIsoPrefixToLocalDate", () => {
+  test("parses month-only ISO strings to the first of the month", () => {
+    expect(parseIsoPrefixToLocalDate("2026-04")).toEqual(new Date(2026, 3, 1))
   })
 })
 
@@ -152,6 +168,22 @@ describe("normalizeCatalystEventTiming", () => {
     expect(normalized.periodKey).toBe("2026-Q3")
     expect(normalized.windowStart).toBeUndefined()
     expect(normalized.windowEnd).toBeUndefined()
+  })
+
+  test("coerces month-only windowStart on open/from to period", () => {
+    const event: CatalystResearch["events"][number] = {
+      ...baseEventFields,
+      timingShape: "open",
+      windowStart: "2026-04",
+      datePrecision: "unknown",
+    }
+
+    const normalized = normalizeCatalystEventTiming(event, options)
+
+    expect(normalized.timingShape).toBe("period")
+    expect(normalized.periodKey).toBe("2026-04")
+    expect(normalized.windowStart).toBeUndefined()
+    expect(normalized.datePrecision).toBe("month")
   })
 })
 
@@ -257,6 +289,20 @@ describe("eventTimingLabel", () => {
         fixtureNow,
       ),
     ).toBe("Since H1 2025 (ongoing)")
+  })
+
+  test("labels publication report release month", () => {
+    const event = {
+      timingShape: "period" as const,
+      periodKey: "2026-07",
+      datePrecision: "month",
+    }
+
+    expect(eventTimingLabel(event, fixtureNow)).toBe("July 2026")
+
+    const anchor = parseSortAnchor(event, fixtureNow)
+    expect(anchor).toEqual(new Date(2026, 6, 1))
+    expect(anchor && formatQuarterLabel(anchor)).toBe("Q3 2026")
   })
 })
 

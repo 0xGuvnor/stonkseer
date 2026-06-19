@@ -8,7 +8,7 @@ import {
 } from "convex/react"
 import Link from "next/link"
 import { useState } from "react"
-import { Briefcase, Loader2, RefreshCw } from "lucide-react"
+import { Briefcase, Copy, Loader2, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import { showConvexMutationErrorToast } from "@/lib/convex-mutation-error"
@@ -30,7 +30,13 @@ import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { cn } from "@/lib/utils"
 import { RESEARCH_ROUTE_CENTER_SHELL } from "@/lib/research-route-layout"
-import { sortCatalystEventsByAnchor } from "@/lib/research-results-utils"
+import { catalystEventsToCsv } from "@/lib/catalyst-events-csv"
+import {
+  ALL_EXPECTED_IMPACTS,
+  filterCatalystEventsByImpact,
+  sortCatalystEventsByAnchor,
+  type ExpectedImpact,
+} from "@/lib/research-results-utils"
 import { CatalystEventsTable } from "@/components/research/catalyst-events-table"
 import { ResearchNotifyToggle } from "@/components/research/research-notify-toggle"
 import type { PortfolioView } from "@/types/research-ui"
@@ -183,6 +189,9 @@ export function ResearchRunResults({
   const [portfolioSelection, setPortfolioSelection] = useState<string>("")
   const [isSaving, setIsSaving] = useState(false)
   const [isMarkingStale, setIsMarkingStale] = useState(false)
+  const [selectedImpacts, setSelectedImpacts] = useState<Set<ExpectedImpact>>(
+    () => new Set(ALL_EXPECTED_IMPACTS),
+  )
 
   const { isLoaded: clerkLoaded, isSignedIn } = useAuth()
   const { isAuthenticated } = useConvexAuth()
@@ -212,6 +221,14 @@ export function ResearchRunResults({
   const events = results?.events
   const sortedCatalystEvents =
     events && events.length > 0 ? sortCatalystEventsByAnchor(events) : []
+  const filteredCatalystEvents = filterCatalystEventsByImpact(
+    sortedCatalystEvents,
+    selectedImpacts,
+  )
+  const displayCatalystEvents =
+    filteredCatalystEvents.length > 0
+      ? sortCatalystEventsByAnchor(filteredCatalystEvents)
+      : []
 
   const portfolioList = portfolios ?? []
   const saveTargetValue =
@@ -294,6 +311,24 @@ export function ResearchRunResults({
       showConvexMutationErrorToast(error, "Could not save to portfolio.")
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  async function handleCopyData() {
+    if (displayCatalystEvents.length === 0) {
+      toast.info("No events match the selected impact filters.")
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(
+        catalystEventsToCsv(displayCatalystEvents),
+      )
+      toast.success(
+        `Copied ${displayCatalystEvents.length} event${displayCatalystEvents.length === 1 ? "" : "s"} to clipboard`,
+      )
+    } catch {
+      toast.error("Could not copy to clipboard.")
     }
   }
 
@@ -396,6 +431,15 @@ export function ResearchRunResults({
               </Button>
             ) : null}
             <Button
+              variant="outline"
+              onClick={handleCopyData}
+              disabled={displayCatalystEvents.length === 0}
+              className="min-w-0 flex-1 cursor-pointer sm:w-auto sm:flex-none"
+            >
+              <Copy className="size-4" aria-hidden />
+              Copy data
+            </Button>
+            <Button
               onClick={handleSave}
               disabled={saveDisabled}
               className="min-w-0 flex-1 cursor-pointer bg-foreground text-background hover:bg-foreground/90 sm:w-auto sm:flex-none"
@@ -495,7 +539,12 @@ export function ResearchRunResults({
         ) : null}
 
         {results.events.length > 0 ? (
-          <CatalystEventsTable events={sortedCatalystEvents} variant="results" />
+          <CatalystEventsTable
+            events={sortedCatalystEvents}
+            variant="results"
+            selectedImpacts={selectedImpacts}
+            onSelectedImpactsChange={setSelectedImpacts}
+          />
         ) : results.run.status === "completed" && !results.run.error ? (
           <div className="glass rounded-2xl p-8 text-center ring-1 ring-border/60">
             <p className="text-sm text-muted-foreground">

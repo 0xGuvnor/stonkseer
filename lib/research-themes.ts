@@ -11,20 +11,21 @@ export function formatResearchBreadthExtractionBlock(): string {
 /** Extraction guidance for structured timing fields (timingShape, periodKey, dates). */
 export function formatResearchTimingExtractionBlock(): string {
   return [
-    "Populate timingShape and periodKey/expectedDate/window fields on every event — prose in summary alone does not satisfy timing. If the event title or sources name a fiscal/calendar quarter (Q1–Q4 plus year, or 'first quarter 2026'), set timingShape to period, periodKey to YYYY-Qn (canonical form, capital Q, e.g. 2026-Q2), and datePrecision to quarter. This is structuring the event's defining anchor, not inventing dates.",
-    "Quarterly vehicle production/delivery reports, deliveries press releases, and similar recurring operational disclosures follow the same rule even when the exact release day is not cited. For those reports, periodKey is the fiscal quarter the data covers (from the title), not the calendar month of release.",
-    "When sources give a release month or window (e.g. early July 2026), include it in summary. Prefer period plus quarter periodKey for quarter-named reports. Use point, closed_window, or by only when the event is primarily defined by a release date, not a fiscal quarter report.",
-    "Use status likely or speculative with lower confidence when timing is inferred from cadence or reporting — but still populate periodKey, not unknown.",
-    "Reserve timingShape unknown only when no year, quarter, month, deadline, or bounded window appears in the event title or cited sources. A provider report saying 'timing unclear' does not override a quarter named in the title or snippets.",
-    "Anti-inference scope: never anchor windowStart to today's run date or windowEnd to the 12-month research horizon unless a source explicitly does. Allowed: extracting 2026-Q2 from 'Q2 2026 Vehicle Production & Deliveries Report' or matching source text.",
+    "Populate timingShape and periodKey/expectedDate/window fields on every event — prose in summary alone does not satisfy timing. Timing fields answer when the catalyst happens (publication, deadline, start of activity), not which fiscal period a report covers — put the covered quarter in the title and summary.",
+    "Publication and disclosure catalysts (earnings releases, vehicle production/delivery reports, SEC filings, press releases, data readouts, shareholder meetings) anchor timing to the expected publication or occurrence date. Example: 'Q2 2026 Vehicle Production & Deliveries Report, expected early July 2026' → timingShape period, periodKey 2026-07, datePrecision month — not 2026-Q2. The title names which report; timing is when it is expected.",
+    "Use timingShape period with YYYY-Qn and datePrecision quarter only when the catalyst is defined by activity during that quarter (e.g. production ramp through Q2, guidance for FY2026), not when it is a report about that quarter.",
+    "For month-fuzzy anchors, prefer timingShape period with periodKey YYYY-MM and datePrecision month — not partial windowStart values like 2026-04 without a day. Use point or from only when a specific day is source-backed.",
+    "When sources give only the covered quarter but release timing is inferable from cadence or prior reporting, anchor the expected release month with status likely or speculative and lower confidence — do not fall back to the covered quarter as periodKey.",
+    "Reserve timingShape unknown only when no year, quarter, month, deadline, or bounded window appears in the event title or cited sources. A provider report saying 'timing unclear' does not override a release month or quarter named in snippets.",
+    "Anti-inference scope: never anchor windowStart to today's run date or windowEnd to the 12-month research horizon unless a source explicitly does. Allowed: extracting 2026-07 from 'expected early July 2026' or a source-backed publication month.",
   ].join("\n")
 }
 
 /** Hosted-search guidance for stating timing explicitly in report prose. */
 export function formatResearchTimingReportBlock(): string {
   return [
-    "For quarter-named milestones (Q1–Q4 plus year), state the fiscal quarter explicitly (YYYY-Qn) and the expected release month or window when sources support it.",
-    "Treat quarterly vehicle production/delivery reports and similar operational disclosures as first-class catalysts: name the quarter covered and when the report is expected (e.g. Q2 2026 deliveries, expected early July 2026).",
+    "For publication and disclosure catalysts, state the expected publication month or window prominently — not only the fiscal quarter the data covers.",
+    "Treat quarterly vehicle production/delivery reports and similar operational disclosures as first-class catalysts: name the quarter covered and when the report is expected (e.g. Q2 2026 deliveries data, expected early July 2026).",
     "Use 'timing unclear' only when no year, quarter, month, or date anchor appears in sources — not when the milestone name itself names a quarter.",
   ].join("\n")
 }

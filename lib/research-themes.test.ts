@@ -24,13 +24,20 @@ describe("formatResearchTimingExtractionBlock", () => {
     expect(block).toContain("periodKey")
   })
 
-  test("maps quarter-named events to period and YYYY-Qn", () => {
+  test("anchors publication catalysts to release month, not covered quarter", () => {
+    const block = formatResearchTimingExtractionBlock()
+
+    expect(block).toContain("2026-07")
+    expect(block).toContain("not 2026-Q2")
+    expect(block).toContain("Vehicle Production & Deliveries Report")
+    expect(block).toContain("Publication and disclosure catalysts")
+  })
+
+  test("reserves YYYY-Qn for period-activity milestones", () => {
     const block = formatResearchTimingExtractionBlock()
 
     expect(block).toContain("YYYY-Qn")
-    expect(block).toContain("2026-Q2")
-    expect(block).toContain("datePrecision to quarter")
-    expect(block).toContain("Vehicle Production & Deliveries Report")
+    expect(block).toContain("activity during that quarter")
   })
 
   test("reserves unknown only when no anchor exists", () => {
@@ -44,15 +51,15 @@ describe("formatResearchTimingExtractionBlock", () => {
     const block = formatResearchTimingExtractionBlock()
 
     expect(block).toContain("12-month research horizon")
-    expect(block).toContain("Allowed: extracting 2026-Q2")
+    expect(block).toContain("Allowed: extracting 2026-07")
   })
 })
 
 describe("formatResearchTimingReportBlock", () => {
-  test("asks hosted search to state fiscal quarters explicitly", () => {
+  test("asks hosted search to state publication month prominently", () => {
     const block = formatResearchTimingReportBlock()
 
-    expect(block).toContain("YYYY-Qn")
+    expect(block).toContain("publication month")
     expect(block).toContain("vehicle production/delivery reports")
     expect(block).toContain("timing unclear")
   })

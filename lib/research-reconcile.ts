@@ -13,14 +13,16 @@ import {
   buildGatewayProviderOptions,
   type ResearchGatewayContext,
 } from "./research-gateway-observability"
-import { normalizeSourceUrl } from "./research-source-url"
+import {
+  DETERMINISTIC_MERGE_MIN_SCORE,
+  mergeOccasionEvents,
+  scoreOccasionPair,
+} from "./research-occasion-match"
 
 const DEFAULT_CARRY_FORWARD_MAX_AGE_DAYS = 30
 const DEFAULT_MAX_CARRIED_EVENTS = 8
 const MAX_PRIOR_THEME_COUNT = 4
 const MAX_PRIOR_THEME_FOLLOWUP_QUERIES = 2
-const STRONG_MATCH_SCORE = 100
-const TITLE_MATCH_THRESHOLD = 0.45
 
 export type PriorCatalystEvent = CatalystResearch["events"][number] & {
   createdAt: number
@@ -85,108 +87,15 @@ export function getMaxCarriedEvents(): number {
     : DEFAULT_MAX_CARRIED_EVENTS
 }
 
-function normalizeTitleForMatch(title: string): Set<string> {
-  return new Set(
-    title
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter((token) => token.length > 2),
-  )
-}
-
-function titleJaccard(a: string, b: string): number {
-  const setA = normalizeTitleForMatch(a)
-  const setB = normalizeTitleForMatch(b)
-
-  if (setA.size === 0 || setB.size === 0) {
-    return 0
-  }
-
-  let intersection = 0
-
-  for (const token of setA) {
-    if (setB.has(token)) {
-      intersection += 1
-    }
-  }
-
-  const union = setA.size + setB.size - intersection
-
-  return union === 0 ? 0 : intersection / union
-}
-
-function eventSourceUrls(
-  event: CatalystResearch["events"][number],
-): Set<string> {
-  return new Set(event.sources.map((source) => normalizeSourceUrl(source.url)))
-}
-
-function hasSharedSourceUrl(
-  prior: CatalystResearch["events"][number],
-  candidate: CatalystResearch["events"][number],
-): boolean {
-  const priorUrls = eventSourceUrls(prior)
-
-  for (const url of eventSourceUrls(candidate)) {
-    if (priorUrls.has(url)) {
-      return true
-    }
-  }
-
-  return false
-}
-
-function hasPeriodKeyMatch(
-  prior: CatalystResearch["events"][number],
-  candidate: CatalystResearch["events"][number],
-): boolean {
-  return (
-    prior.periodKey !== undefined &&
-    prior.periodKey === candidate.periodKey &&
-    prior.eventType === candidate.eventType
-  )
-}
-
-function scoreEventPair(
-  prior: CatalystResearch["events"][number],
-  candidate: CatalystResearch["events"][number],
-): number {
-  if (hasSharedSourceUrl(prior, candidate)) {
-    return STRONG_MATCH_SCORE + titleJaccard(prior.title, candidate.title)
-  }
-
-  if (hasPeriodKeyMatch(prior, candidate)) {
-    return STRONG_MATCH_SCORE + titleJaccard(prior.title, candidate.title)
-  }
-
-  const titleScore = titleJaccard(prior.title, candidate.title)
-
-  if (titleScore >= TITLE_MATCH_THRESHOLD) {
-    return titleScore * 10
-  }
-
-  return 0
-}
-
 function mergeMatchedEvents(
   prior: PriorCatalystEvent,
   newer: CatalystResearch["events"][number],
   now: number,
 ): ReconciledCatalystEvent {
-  const sourceByUrl = new Map<string, ReconciledCatalystEvent["sources"][number]>()
-
-  for (const source of prior.sources) {
-    sourceByUrl.set(normalizeSourceUrl(source.url), source)
-  }
-
-  for (const source of newer.sources) {
-    sourceByUrl.set(normalizeSourceUrl(source.url), source)
-  }
+  const merged = mergeOccasionEvents(prior, newer)
 
   return {
-    ...newer,
-    sources: [...sourceByUrl.values()],
+    ...merged,
     createdAt: prior.createdAt,
     lastVerifiedAt: now,
     carriedForward: false,
@@ -214,15 +123,18 @@ export function matchPriorAndNewEvents(
         continue
       }
 
-      const score = scoreEventPair(prior, newEvents[index]!)
+      const { score, kind } = scoreOccasionPair(prior, newEvents[index]!)
 
-      if (score > bestScore) {
+      if (kind === "strong" && score > bestScore) {
         bestScore = score
         bestIndex = index
       }
     }
 
-    if (bestIndex >= 0 && bestScore >= TITLE_MATCH_THRESHOLD * 10) {
+    if (
+      bestIndex >= 0 &&
+      bestScore >= DETERMINISTIC_MERGE_MIN_SCORE
+    ) {
       usedNewIndexes.add(bestIndex)
       mergedNewEvents[bestIndex] = mergeMatchedEvents(
         prior,

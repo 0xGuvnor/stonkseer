@@ -37,6 +37,8 @@ export type CatalystEventsTableProps = {
   className?: string
   now?: number
   variant?: "default" | "results"
+  selectedImpacts?: ReadonlySet<ExpectedImpact>
+  onSelectedImpactsChange?: (selected: Set<ExpectedImpact>) => void
 }
 
 const ONGOING_SUFFIX = " (ongoing)"
@@ -220,11 +222,15 @@ export function CatalystEventsTable({
   className,
   now: nowProp,
   variant = "default",
+  selectedImpacts: selectedImpactsProp,
+  onSelectedImpactsChange,
 }: CatalystEventsTableProps) {
   const [resolvedNow] = useState(() => nowProp ?? Date.now())
-  const [selectedImpacts, setSelectedImpacts] = useState<Set<ExpectedImpact>>(
-    () => new Set(ALL_EXPECTED_IMPACTS),
-  )
+  const [internalSelectedImpacts, setInternalSelectedImpacts] = useState<
+    Set<ExpectedImpact>
+  >(() => new Set(ALL_EXPECTED_IMPACTS))
+  const selectedImpacts = selectedImpactsProp ?? internalSelectedImpacts
+  const setSelectedImpacts = onSelectedImpactsChange ?? setInternalSelectedImpacts
   const now = nowProp ?? resolvedNow
   const filteredEvents = filterCatalystEventsByImpact(events, selectedImpacts)
   const sortedEvents =

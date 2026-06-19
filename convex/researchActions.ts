@@ -48,6 +48,11 @@ import {
 import { verifyAndFilterEvents } from "../lib/research-grounding"
 import { dedupeIntraRunCatalystEvents } from "../lib/research-inrun-dedupe"
 import {
+  formatResearchOccasionExtractionSelfCheck,
+  formatResearchOccasionMergeBlock,
+  formatResearchOccasionReportBlock,
+} from "../lib/research-occasion-merge"
+import {
   formatResearchProceedingExtractionSelfCheck,
   formatResearchProceedingMergeBlock,
   formatResearchProceedingReportBlock,
@@ -997,6 +1002,7 @@ function buildCatalystReportPrompt(
     "Do not use ticker-specific event maps or preconceived event lists—derive everything from what current sources actually discuss.",
     "Write the report as a list of distinct catalysts. For each catalyst give: a short name, expected timing (exact date, bounded window, deadline, fiscal quarter as YYYY-Qn, ongoing/open-ended, or timing unclear only when no anchor exists), whether it is confirmed, likely, or speculative, what it is, why it could move the stock, and the source URLs that support it.",
     formatResearchTimingReportBlock(),
+    formatResearchOccasionReportBlock(),
     formatResearchProceedingReportBlock(),
     "For ongoing or open-ended milestones, describe timing qualitatively (e.g. gradual rollout, under review) — do not invent a one-year end date from the research scope.",
     "Distinguish milestones already in progress (cite when they began if sources say so) from those expected to begin in the future.",
@@ -2029,15 +2035,17 @@ async function buildAiEvents(
     formatResearchBreadthExtractionBlock(),
     "When sources describe the same dated or named real-world occasion (same flagship event, schedule, venue, or official page), output one merged event with the dominant eventType—put expected reveals in summary and whyItMatters instead of duplicate rows. Do not stitch conflicting share counts, percentages, or dates from different sources into one event; use separate rows or one lower-confidence row.",
     formatResearchProceedingMergeBlock(),
+    formatResearchOccasionMergeBlock(),
     formatResearchProceedingExtractionSelfCheck(),
+    formatResearchOccasionExtractionSelfCheck(),
     "Every event must cite at least one source whose URL appears in the reports or snippets. Never invent URLs. For each source quote: copy the snippet quote verbatim when a snippet with that URL exists; otherwise quote the specific report claim that the URL supports.",
-    "Use timingShape on every event: point for exact dates; closed_window only when both start and end are source-backed; from when the catalyst has not started yet and begins after windowStart; by for deadlines; period with periodKey (YYYY, YYYY-Qn, YYYY-Hn, YYYY-MM) for fuzzy quarters/months/years; open for milestones already underway or open-ended without a stated end (may use past windowStart or periodKey when sources cite when they began); unknown only when no source-backed quarter, month, year, or date anchor exists in the title or cited sources — not when the event title names a quarter.",
+    "Use timingShape on every event: point for exact dates; closed_window only when both start and end are source-backed; from when the catalyst has not started yet and begins after windowStart; by for deadlines; period with periodKey (YYYY, YYYY-Qn, YYYY-Hn, YYYY-MM) for when the catalyst happens; open for milestones already underway or open-ended without a stated end (may use past windowStart or periodKey when sources cite when they began); unknown only when no source-backed release month, deadline, quarter-of-activity, year, or date anchor exists in the title or cited sources.",
     formatResearchTimingExtractionBlock(),
     'Use expectedDate for timingShape point, windowStart/windowEnd for from/by/closed_window, and periodKey for period/open. datePrecision must be exactly one of: exact, month, quarter, half, unknown — never year, day, or other labels. Never set windowEnd to the 12-month research cutoff or windowStart to today\'s date unless a source explicitly anchors timing to today — those are research scope, not event properties.',
     "Use status 'likely' or 'speculative' with lower confidence when timing is inferred from targets, cadence, or reporting; prefer primary company, regulator, SEC, or exchange sources over commentary.",
     "Exclude stale past events unless a source clearly supports a future recurrence or future milestone.",
     "summary: 1–2 short factual sentences (what/when/context); do not repeat the title or argue importance. whyItMatters: one short sentence on why the stock might move (guidance, multiple, regulatory binary, demand, dilution risk).",
-    `Use null for unknown company, exchange, or publication date fields. For event timing, use null only when genuinely absent — never leave periodKey null when the title or sources name Qn YYYY. Return up to ${MAX_CATALYST_EVENTS} events, ordered chronologically when timing is known.`,
+    `Use null for unknown company, exchange, or publication date fields. For event timing, use null only when genuinely absent — never leave timing unknown when sources state a release month, deadline, or publication window. Return up to ${MAX_CATALYST_EVENTS} events, ordered chronologically when timing is known.`,
     "Output format: return one JSON object only (companyName, exchange, events); no markdown or commentary.",
     "Research reports:",
     reportsBlock,
@@ -2049,7 +2057,7 @@ async function buildAiEvents(
     const { output } = await generateText({
       model,
       system:
-        "Merge the research into catalyst events. Return a single valid JSON object matching the schema (companyName, exchange, events). Populate timingShape and periodKey/expectedDate/window fields on every event; prose in summary alone does not satisfy timing. Before returning JSON, review the events list and merge rows describing the same named proceeding, investigation, or litigation.",
+        "Merge the research into catalyst events. Return a single valid JSON object matching the schema (companyName, exchange, events). Populate timingShape and periodKey/expectedDate/window fields on every event; prose in summary alone does not satisfy timing. Before returning JSON, merge rows describing the same real-world occasion, proceeding, investigation, or litigation.",
       providerOptions: buildExtractionGatewayProviderOptions(gatewayCtx),
       output: Output.object({
         schema: catalystResearchAiSchema,
@@ -2278,7 +2286,13 @@ export const runResearch = internalAction({
         companyName: companyNameForSearch,
         symbol: run.symbol,
       })
-      const finalEvents = reconciled.events
+
+      const finalDeduped = await dedupeIntraRunCatalystEvents({
+        events: stripReconcileMetadata(reconciled.events),
+        gatewayCtx,
+        symbol: run.symbol,
+      })
+      const finalEvents = finalDeduped.events
 
       if (deepRead.deepReadError) {
         console.warn(
@@ -2306,6 +2320,7 @@ export const runResearch = internalAction({
           reconcileAiReviewCount: reconciled.stats.reconcileAiReviewCount,
           inrunDedupeMergedCount: inRunDeduped.stats.mergedCount,
           inrunDedupeAiReviewCount: inRunDeduped.stats.aiReviewCount,
+          finalDedupeMergedCount: finalDeduped.stats.mergedCount,
           queries: [...hostedResearch.diagnostics, ...followUp.diagnostics],
         }
       )

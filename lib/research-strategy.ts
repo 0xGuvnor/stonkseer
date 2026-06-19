@@ -1,1 +1,1 @@
-export const RESEARCH_STRATEGY_VERSION = "catalyst-inrun-dedupe-v1"
+export const RESEARCH_STRATEGY_VERSION = "catalyst-occasion-dedupe-v1"

@@ -163,6 +163,7 @@ export default defineSchema({
     reconcileAiReviewCount: v.optional(v.number()),
     inrunDedupeMergedCount: v.optional(v.number()),
     inrunDedupeAiReviewCount: v.optional(v.number()),
+    finalDedupeMergedCount: v.optional(v.number()),
     queries: v.array(
       v.object({
         bucket: v.string(),

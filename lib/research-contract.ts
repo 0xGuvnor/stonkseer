@@ -217,7 +217,7 @@ export const catalystEventAiSchema = z.object({
       "One primary label per distinct real-world milestone. Open regulatory investigations, recall probes, and litigation are each a single event until resolved — do not split the same agency proceeding by editorial angle. If a flagship conference, keynote, or investor forum is also where launches are expected, prefer conference or investor_day over a second product or launch row for the same dates or official page.",
     ),
   timingShape: timingShapeSchema.describe(
-    "Timing semantics: point=exact date; closed_window=source-backed start and end; from=has not started yet, begins after windowStart; by=deadline only; period=fuzzy period via periodKey (required when title or sources name a quarter, e.g. Q2 2026 deliveries report → period + 2026-Q2); open=already underway or open-ended, may use past windowStart/periodKey; unknown=only when no year, quarter, month, or date anchor appears in title or cited sources. Do not emit both open and unknown for the same ongoing proceeding.",
+    "Timing semantics: point=exact date; closed_window=source-backed start and end; from=has not started yet, begins after windowStart; by=deadline only; period=fuzzy period via periodKey (when the catalyst happens — e.g. Q2 2026 deliveries report expected July 2026 → period + 2026-07, not 2026-Q2); open=already underway or open-ended, may use past windowStart/periodKey; unknown=only when no year, quarter, month, or date anchor appears in title or cited sources. Use period + YYYY-Qn only when activity during that quarter is the catalyst, not for reports about that quarter. Do not emit both open and unknown for the same ongoing proceeding.",
   ),
   expectedDate: z
     .string()
@@ -239,7 +239,7 @@ export const catalystEventAiSchema = z.object({
     .string()
     .nullable()
     .describe(
-      "Fuzzy period YYYY, YYYY-Qn, YYYY-Hn, or YYYY-MM when timingShape is period or open, otherwise null. Canonical quarter form: 2026-Q2 (capital Q). For 'Q2 2026 Vehicle Production & Deliveries Report', use 2026-Q2 — the quarter the data covers, not the release month.",
+      "Fuzzy period YYYY, YYYY-Qn, YYYY-Hn, or YYYY-MM when timingShape is period or open, otherwise null. Canonical quarter form: 2026-Q2 (capital Q). Anchor when the catalyst happens: for 'Q2 2026 Vehicle Production & Deliveries Report' expected early July 2026, use 2026-07 (release month), not 2026-Q2 (covered quarter). Put the covered quarter in title/summary.",
     ),
   datePrecision: datePrecisionAiSchema.describe(
     'Must be exactly one of: "exact", "month", "quarter", "half", "unknown". Do not use "year", "day", or other labels.',
@@ -263,7 +263,7 @@ export const catalystResearchAiSchema = z.object({
     .array(catalystEventAiSchema)
     .max(MAX_CATALYST_EVENTS)
     .describe(
-      "Distinct catalysts only; merge overlapping evidence about the same dated or named occurrence, regulatory proceeding, investigation ID, or litigation into a single event with all sources.",
+      "Distinct catalysts only; merge overlapping evidence about the same dated or named real-world occasion (production start, facility opening, conference, earnings release, regulatory proceeding, etc.) into a single event with all sources — not separate rows that differ only by headline angle or detail level.",
     ),
 })
 

@@ -38,6 +38,23 @@ const SHORT_MONTHS = [
   "Dec",
 ] as const
 
+const FULL_MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const
+
+const MONTH_ONLY_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/
+
 const PERIOD_KEY_PATTERN =
   /^(\d{4})(?:-(Q[1-4]|H[12]|(?:0[1-9]|1[0-2])))?$/
 
@@ -88,39 +105,61 @@ function tryFormatIsoDatePrefix(raw: string): string | null {
   return `${day}${ordinalSuffix(day)} ${SHORT_MONTHS[d.getMonth()]} ${year}`
 }
 
+function tryFormatIsoMonthPrefix(raw: string): string | null {
+  const match = MONTH_ONLY_PATTERN.exec(raw.trim())
+  if (!match) {
+    return null
+  }
+  const year = Number(match[1])
+  const month = Number(match[2])
+  return `${FULL_MONTHS[month - 1]} ${year}`
+}
+
 export function formatTimingFragment(raw: string): string {
-  return tryFormatIsoDatePrefix(raw) ?? raw.trim()
+  return (
+    tryFormatIsoDatePrefix(raw) ??
+    tryFormatIsoMonthPrefix(raw) ??
+    raw.trim()
+  )
 }
 
 export function parseIsoPrefixToLocalDate(raw: string | undefined): Date | null {
   if (!raw?.trim()) {
     return null
   }
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw.trim())
-  if (!match) {
+  const trimmed = raw.trim()
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed)
+  if (match) {
+    const year = Number(match[1])
+    const month = Number(match[2])
+    const day = Number(match[3])
+    if (
+      !Number.isInteger(year) ||
+      month < 1 ||
+      month > 12 ||
+      day < 1 ||
+      day > 31
+    ) {
+      return null
+    }
+    const d = new Date(year, month - 1, day)
+    if (
+      d.getFullYear() !== year ||
+      d.getMonth() !== month - 1 ||
+      d.getDate() !== day
+    ) {
+      return null
+    }
+    return d
+  }
+
+  const monthOnlyMatch = MONTH_ONLY_PATTERN.exec(trimmed)
+  if (!monthOnlyMatch) {
     return null
   }
-  const year = Number(match[1])
-  const month = Number(match[2])
-  const day = Number(match[3])
-  if (
-    !Number.isInteger(year) ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31
-  ) {
-    return null
-  }
-  const d = new Date(year, month - 1, day)
-  if (
-    d.getFullYear() !== year ||
-    d.getMonth() !== month - 1 ||
-    d.getDate() !== day
-  ) {
-    return null
-  }
-  return d
+  const year = Number(monthOnlyMatch[1])
+  const month = Number(monthOnlyMatch[2])
+  return new Date(year, month - 1, 1)
 }
 
 function isoDateString(d: Date): string {
@@ -216,7 +255,7 @@ export function parsePeriodKey(key: string): ParsedPeriodKey | null {
   const anchorStart = new Date(year, month - 1, 1)
   const anchorEnd = new Date(year, month, 0)
   return {
-    label: `${SHORT_MONTHS[month - 1]} ${year}`,
+    label: `${FULL_MONTHS[month - 1]} ${year}`,
     anchorStart,
     anchorEnd,
   }
@@ -319,6 +358,33 @@ function coerceFromPastStartToOpen(
   return { ...event, timingShape: "open" }
 }
 
+function coerceMonthOnlyWindowStart(
+  event: CatalystResearch["events"][number],
+): CatalystResearch["events"][number] {
+  if (!event.windowStart) {
+    return event
+  }
+
+  const periodKey = event.windowStart.trim()
+  if (!MONTH_ONLY_PATTERN.test(periodKey)) {
+    return event
+  }
+
+  if (event.timingShape !== "open" && event.timingShape !== "from") {
+    return event
+  }
+
+  const { windowStart: _windowStart, ...rest } = event
+
+  return {
+    ...rest,
+    timingShape: "period",
+    periodKey,
+    datePrecision:
+      event.datePrecision === "unknown" ? "month" : event.datePrecision,
+  }
+}
+
 function coerceShapeFields(
   event: CatalystResearch["events"][number],
 ): CatalystResearch["events"][number] {
@@ -395,6 +461,7 @@ export function normalizeCatalystEventTiming(
   let normalized = stripHorizonEnd(event, options.researchHorizonEnd)
   normalized = coerceFromPastStartToOpen(normalized, options.researchRunDate)
   normalized = stripRunDateStart(normalized, options.researchRunDate)
+  normalized = coerceMonthOnlyWindowStart(normalized)
   return coerceShapeFields(normalized)
 }
 
