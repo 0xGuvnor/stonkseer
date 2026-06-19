@@ -6,6 +6,7 @@ import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import { internalAction } from "./_generated/server"
 import { MARKET_TAPE_SYMBOLS } from "../lib/market-tape-config"
+import { isUsExtendedMarketSessionOpen } from "../lib/us-market-hours"
 
 const finnhubQuoteSchema = z
   .object({
@@ -77,6 +78,10 @@ export const refreshMarketTape = internalAction({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
+    if (!isUsExtendedMarketSessionOpen()) {
+      return null
+    }
+
     const apiKey = process.env.FINNHUB_API_KEY
 
     if (!apiKey) {
