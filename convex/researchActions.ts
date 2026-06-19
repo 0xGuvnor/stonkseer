@@ -47,6 +47,14 @@ import {
 } from "../lib/research-followup"
 import { verifyAndFilterEvents } from "../lib/research-grounding"
 import {
+  buildPriorThemeFollowUpQueries,
+  getPriorThemeFollowUpQueryBudget,
+  reconcileCatalystEventsWithPrior,
+  selectPriorThemesForFollowUp,
+  stripReconcileMetadata,
+  type PriorCatalystEvent,
+} from "../lib/research-reconcile"
+import {
   buildExtractionGatewayProviderOptions,
   buildGatewayProviderOptions,
   type ResearchGatewayContext,
@@ -1704,6 +1712,7 @@ async function runCatalystFollowUpPass(
   reports: string[],
   now: number,
   gatewayCtx: ResearchGatewayContext,
+  priorThemes: string[] = [],
 ): Promise<{
   queries: string[]
   snippets: SourceSnippet[]
@@ -1712,44 +1721,81 @@ async function runCatalystFollowUpPass(
   const model =
     process.env.CATALYST_FOLLOWUP_MODEL?.trim() || process.env.AI_GATEWAY_MODEL
   const maxQueries = getFollowUpMaxQueries()
+  const priorThemeQueries = buildPriorThemeFollowUpQueries(
+    symbol,
+    companyName,
+    priorThemes,
+    getPriorThemeFollowUpQueryBudget(),
+  )
 
-  if (!model || maxQueries === 0 || reports.length === 0) {
+  if (maxQueries === 0) {
     return { queries: [], snippets: [], diagnostics: [] }
   }
 
-  let queries: string[] = []
+  if (reports.length === 0 && priorThemeQueries.length === 0) {
+    return { queries: [], snippets: [], diagnostics: [] }
+  }
 
-  try {
-    const result = await generateText({
-      model,
-      providerOptions: buildGatewayProviderOptions(
-        gatewayCtx,
-        "followup-queries",
-      ),
-      prompt: buildFollowUpQueryPrompt(
-        symbol,
-        companyName,
-        reports,
-        maxQueries,
-        now,
-      ),
-    })
+  let reportQueries: string[] = []
 
-    queries = parseFollowUpQueries(result.text, maxQueries)
-  } catch (err) {
-    return {
-      queries: [],
-      snippets: [],
-      diagnostics: [
-        {
-          bucket: "follow_up",
-          query: `Follow-up query generation: ${symbol}`,
-          resultCount: 0,
-          keptCount: 0,
-          urls: [],
-          error: err instanceof Error ? err.message : String(err),
-        },
-      ],
+  if (model && reports.length > 0) {
+    const reportQueryBudget = Math.max(0, maxQueries - priorThemeQueries.length)
+
+    if (reportQueryBudget > 0) {
+      try {
+        const result = await generateText({
+          model,
+          providerOptions: buildGatewayProviderOptions(
+            gatewayCtx,
+            "followup-queries",
+          ),
+          prompt: buildFollowUpQueryPrompt(
+            symbol,
+            companyName,
+            reports,
+            reportQueryBudget,
+            now,
+            priorThemes,
+          ),
+        })
+
+        reportQueries = parseFollowUpQueries(result.text, reportQueryBudget)
+      } catch (err) {
+        if (priorThemeQueries.length === 0) {
+          return {
+            queries: [],
+            snippets: [],
+            diagnostics: [
+              {
+                bucket: "follow_up",
+                query: `Follow-up query generation: ${symbol}`,
+                resultCount: 0,
+                keptCount: 0,
+                urls: [],
+                error: err instanceof Error ? err.message : String(err),
+              },
+            ],
+          }
+        }
+      }
+    }
+  }
+
+  const seen = new Set<string>()
+  const queries: string[] = []
+
+  for (const query of [...priorThemeQueries, ...reportQueries]) {
+    const key = query.toLowerCase()
+
+    if (seen.has(key)) {
+      continue
+    }
+
+    seen.add(key)
+    queries.push(query)
+
+    if (queries.length >= maxQueries) {
+      break
     }
   }
 
@@ -2109,6 +2155,13 @@ export const runResearch = internalAction({
       warnHostedSearchAndGatewayEnvGaps()
 
       const researchStartedAt = Date.now()
+      const priorEventsRaw = await ctx.runQuery(
+        internal.researchInternal.getPriorCanonicalEvents,
+        { symbol: run.symbol },
+      )
+      const priorEvents: PriorCatalystEvent[] = priorEventsRaw
+      const priorThemes = selectPriorThemesForFollowUp(priorEvents)
+
       const tickerValidation = await validateTicker(ctx, run.symbol, researchStartedAt)
       assertTickerExists(tickerValidation)
 
@@ -2146,6 +2199,7 @@ export const runResearch = internalAction({
         providerReports.map((entry) => entry.report),
         researchStartedAt,
         gatewayCtx,
+        priorThemes,
       )
 
       const merged = dedupeSnippetsByUrl(
@@ -2198,6 +2252,17 @@ export const runResearch = internalAction({
         )
       }
 
+      const reconciled = await reconcileCatalystEventsWithPrior({
+        priorEvents,
+        newEvents: events,
+        now: researchStartedAt,
+        gatewayCtx,
+        providerReports,
+        companyName: companyNameForSearch,
+        symbol: run.symbol,
+      })
+      const finalEvents = reconciled.events
+
       if (deepRead.deepReadError) {
         console.warn(
           `[stonkseer-research] Exa deep-read for ${run.symbol}: ${deepRead.deepReadError}`,
@@ -2212,17 +2277,21 @@ export const runResearch = internalAction({
           searchQueryCount:
             hostedResearch.providers.length + followUp.queries.length,
           snippetCount: evidenceSnippets.length,
-          extractionEventCount: events.length,
+          extractionEventCount: finalEvents.length,
           deepReadUrlCount: deepRead.deepReadUrlCount,
           deepReadSuccessCount: deepRead.deepReadSuccessCount,
           citationDroppedCount: verified.droppedCount,
           followUpQueryCount: followUp.queries.length,
           reportDerivedSourceCount: verified.reportDerivedSourceCount,
+          priorEventCount: reconciled.stats.priorEventCount,
+          carriedForwardCount: reconciled.stats.carriedForwardCount,
+          reconcileDroppedCount: reconciled.stats.reconcileDroppedCount,
+          reconcileAiReviewCount: reconciled.stats.reconcileAiReviewCount,
           queries: [...hostedResearch.diagnostics, ...followUp.diagnostics],
         }
       )
 
-      if (events.length === 0) {
+      if (finalEvents.length === 0) {
         const missingConfig = getMissingBroadResearchConfig()
 
         if (missingConfig.length > 0) {
@@ -2247,7 +2316,7 @@ export const runResearch = internalAction({
           tickerValidation.companyName,
         exchange:
           aiResearch?.exchange ?? finnhub.exchange ?? tickerValidation.exchange,
-        events,
+        events: stripReconcileMetadata(finalEvents),
         model: process.env.AI_GATEWAY_MODEL ?? "deterministic-finnhub-snippets",
       })
     } catch (error) {

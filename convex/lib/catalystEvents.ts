@@ -32,6 +32,8 @@ export type CatalystEventInput = {
     supportsFields: string[]
     provenance?: string
   }>
+  createdAt?: number
+  lastVerifiedAt?: number
 }
 
 export async function deleteCatalystEventsForStock(
@@ -70,6 +72,9 @@ export async function insertCatalystEventsForStock(
   const eventIds: Id<"catalystEvents">[] = []
 
   for (const event of args.events) {
+    const createdAt = event.createdAt ?? args.now
+    const lastVerifiedAt = event.lastVerifiedAt ?? args.now
+
     const eventId = await ctx.db.insert("catalystEvents", {
       stockId: args.stockId,
       sourceRunId: args.runId,
@@ -88,8 +93,8 @@ export async function insertCatalystEventsForStock(
       status: event.status,
       expectedImpact: event.expectedImpact,
       sourceCount: event.sources.length,
-      lastVerifiedAt: args.now,
-      createdAt: args.now,
+      lastVerifiedAt,
+      createdAt,
       updatedAt: args.now,
     })
 

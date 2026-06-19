@@ -13,7 +13,9 @@ import { isPortfolioStockDueForRefresh } from "../lib/portfolio-refresh"
 import {
   deleteCatalystEventsForStock,
   insertCatalystEventsForStock,
+  loadCatalystEventsWithSources,
   markPortfolioStocksResearchRefreshed,
+  resolveStockIdForSymbol,
 } from "./lib/catalystEvents"
 
 const sourceInput = v.object({
@@ -23,7 +25,13 @@ const sourceInput = v.object({
   publishedAt: v.optional(v.string()),
   quote: v.string(),
   supportsFields: v.array(v.string()),
-  provenance: v.optional(v.string()),
+  provenance: v.optional(
+    v.union(
+      v.literal("evidence_snippet"),
+      v.literal("report_derived"),
+      v.literal("prior_run_carryforward"),
+    ),
+  ),
 })
 
 const eventInput = v.object({
@@ -41,6 +49,27 @@ const eventInput = v.object({
   status: catalystStatusValidator,
   expectedImpact: expectedImpactValidator,
   sources: v.array(sourceInput),
+  createdAt: v.optional(v.number()),
+  lastVerifiedAt: v.optional(v.number()),
+})
+
+const priorCanonicalEventReturn = v.object({
+  title: v.string(),
+  summary: v.string(),
+  whyItMatters: v.string(),
+  eventType: eventTypeValidator,
+  expectedDate: v.optional(v.string()),
+  windowStart: v.optional(v.string()),
+  windowEnd: v.optional(v.string()),
+  periodKey: v.optional(v.string()),
+  timingShape: timingShapeValidator,
+  datePrecision: datePrecisionValidator,
+  confidence: v.number(),
+  status: catalystStatusValidator,
+  expectedImpact: expectedImpactValidator,
+  sources: v.array(sourceInput),
+  createdAt: v.number(),
+  lastVerifiedAt: v.number(),
 })
 
 const searchDiagnosticInput = v.object({
@@ -54,6 +83,24 @@ const searchDiagnosticInput = v.object({
   error: v.optional(v.string()),
   reportChars: v.optional(v.number()),
 })
+
+function normalizeSourceProvenance(
+  provenance: string | undefined,
+):
+  | "evidence_snippet"
+  | "report_derived"
+  | "prior_run_carryforward"
+  | undefined {
+  if (
+    provenance === "evidence_snippet" ||
+    provenance === "report_derived" ||
+    provenance === "prior_run_carryforward"
+  ) {
+    return provenance
+  }
+
+  return undefined
+}
 
 export const getRun = internalQuery({
   args: {
@@ -97,6 +144,49 @@ export const getRun = internalQuery({
   },
 })
 
+export const getPriorCanonicalEvents = internalQuery({
+  args: {
+    symbol: v.string(),
+  },
+  returns: v.array(priorCanonicalEventReturn),
+  handler: async (ctx, args) => {
+    const stockId = await resolveStockIdForSymbol(ctx, args.symbol)
+
+    if (!stockId) {
+      return []
+    }
+
+    const eventsWithSources = await loadCatalystEventsWithSources(ctx, stockId)
+
+    return eventsWithSources.map((event) => ({
+      title: event.title,
+      summary: event.summary,
+      whyItMatters: event.whyItMatters,
+      eventType: event.eventType,
+      expectedDate: event.expectedDate,
+      windowStart: event.windowStart,
+      windowEnd: event.windowEnd,
+      periodKey: event.periodKey,
+      timingShape: event.timingShape,
+      datePrecision: event.datePrecision,
+      confidence: event.confidence,
+      status: event.status,
+      expectedImpact: event.expectedImpact,
+      sources: event.sources.map((source) => ({
+        url: source.url,
+        title: source.title,
+        publisher: source.publisher,
+        publishedAt: source.publishedAt,
+        quote: source.quote,
+        supportsFields: source.supportsFields,
+        provenance: normalizeSourceProvenance(source.provenance),
+      })),
+      createdAt: event.createdAt,
+      lastVerifiedAt: event.lastVerifiedAt,
+    }))
+  },
+})
+
 export const recordResearchDiagnostics = internalMutation({
   args: {
     runId: v.id("researchRuns"),
@@ -109,6 +199,10 @@ export const recordResearchDiagnostics = internalMutation({
     citationDroppedCount: v.optional(v.number()),
     followUpQueryCount: v.optional(v.number()),
     reportDerivedSourceCount: v.optional(v.number()),
+    priorEventCount: v.optional(v.number()),
+    carriedForwardCount: v.optional(v.number()),
+    reconcileDroppedCount: v.optional(v.number()),
+    reconcileAiReviewCount: v.optional(v.number()),
     queries: v.array(searchDiagnosticInput),
   },
   returns: v.null(),
@@ -125,6 +219,10 @@ export const recordResearchDiagnostics = internalMutation({
       citationDroppedCount: args.citationDroppedCount,
       followUpQueryCount: args.followUpQueryCount,
       reportDerivedSourceCount: args.reportDerivedSourceCount,
+      priorEventCount: args.priorEventCount,
+      carriedForwardCount: args.carriedForwardCount,
+      reconcileDroppedCount: args.reconcileDroppedCount,
+      reconcileAiReviewCount: args.reconcileAiReviewCount,
       queries: args.queries,
       createdAt: Date.now(),
     })

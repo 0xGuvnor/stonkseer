@@ -7,6 +7,7 @@ export type ResearchGatewayLeg =
   | "xai-search"
   | "followup-queries"
   | "merge-extraction"
+  | "reconcile-carryforward"
 
 export type ResearchGatewaySource =
   | "anonymous"

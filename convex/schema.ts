@@ -157,6 +157,10 @@ export default defineSchema({
     citationDroppedCount: v.optional(v.number()),
     followUpQueryCount: v.optional(v.number()),
     reportDerivedSourceCount: v.optional(v.number()),
+    priorEventCount: v.optional(v.number()),
+    carriedForwardCount: v.optional(v.number()),
+    reconcileDroppedCount: v.optional(v.number()),
+    reconcileAiReviewCount: v.optional(v.number()),
     queries: v.array(
       v.object({
         bucket: v.string(),

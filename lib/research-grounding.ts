@@ -1,15 +1,9 @@
 import type { CatalystResearch } from "./research-contract"
 import type { SourceSnippet } from "./research-discovery"
+import { normalizeSourceUrl } from "./research-source-url"
 
 function normalizeUrl(value: string) {
-  try {
-    const url = new URL(value)
-    url.hash = ""
-
-    return url.toString()
-  } catch {
-    return value
-  }
+  return normalizeSourceUrl(value)
 }
 
 export type CitationVerifyResult = {

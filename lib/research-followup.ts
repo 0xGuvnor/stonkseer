@@ -41,19 +41,33 @@ export function buildFollowUpQueryPrompt(
   reports: string[],
   maxQueries: number,
   now: number,
+  priorThemes: string[] = [],
 ): string {
   const today = new Date(now).toISOString().slice(0, 10)
   const companyLabel = companyName ? `${companyName} (${symbol})` : symbol
+  const priorThemesBlock =
+    priorThemes.length > 0
+      ? [
+          "Prior canonical catalyst themes from the last completed run (re-check timing and sourcing; derive queries only when useful):",
+          ...priorThemes.map((theme) => `- ${theme}`),
+        ].join("\n")
+      : ""
 
   return [
     `Today is ${today}. Below are research reports about upcoming stock catalysts for ${companyLabel}, written by independent search agents.`,
     "Identify the named programs, products, projects, factories or sites, regulatory processes, and milestones that look material to the stock but lack specific timing, official confirmation, or strong sourcing in the reports.",
     "When reports mention quarterly vehicle production/delivery reports or similar operational disclosures by quarter but without an expected release month or window, include targeted queries to surface when those reports are typically published.",
     `Write up to ${maxQueries} short web search queries that would surface dates, official confirmations, or recent credible reporting for those themes. Derive every query strictly from the report content; do not use generic templates or themes the reports never mention.`,
+    priorThemes.length > 0
+      ? "When prior canonical themes below are absent from the reports, you may include one or two queries to re-check those themes if they still look material."
+      : null,
     "Return one query per line with no numbering, bullets, quotes, or commentary. If the reports already cover everything with solid timing and sources, return fewer queries or none.",
+    priorThemesBlock,
     "Research reports:",
     ...reports,
-  ].join("\n\n")
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join("\n\n")
 }
 
 /** Parses model output into clean follow-up queries: strips bullets/numbering/quotes, drops headers, dedupes, caps. */
