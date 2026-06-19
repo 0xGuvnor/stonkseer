@@ -379,13 +379,13 @@ export function ResearchRunResults({
           />
         </div>
         {isCompletedWithEvents ? (
-          <div className="flex w-full flex-row items-center gap-2">
+          <div className="flex w-full flex-row items-center gap-2 sm:w-auto">
             {isAdminUser(me) ? (
               <Button
                 variant="outline"
                 onClick={handleMarkStale}
                 disabled={isMarkingStale}
-                className="min-w-0 flex-1 cursor-pointer"
+                className="min-w-0 flex-1 cursor-pointer sm:w-auto sm:flex-none"
               >
                 {isMarkingStale ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -398,7 +398,7 @@ export function ResearchRunResults({
             <Button
               onClick={handleSave}
               disabled={saveDisabled}
-              className="min-w-0 flex-1 cursor-pointer bg-foreground text-background hover:bg-foreground/90"
+              className="min-w-0 flex-1 cursor-pointer bg-foreground text-background hover:bg-foreground/90 sm:w-auto sm:flex-none"
             >
               {isSaving ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden />
