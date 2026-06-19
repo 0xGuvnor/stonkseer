@@ -379,13 +379,13 @@ export function ResearchRunResults({
           />
         </div>
         {isCompletedWithEvents ? (
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <div className="flex w-full flex-row items-center gap-2">
             {isAdminUser(me) ? (
               <Button
                 variant="outline"
                 onClick={handleMarkStale}
                 disabled={isMarkingStale}
-                className="w-full cursor-pointer sm:w-auto"
+                className="min-w-0 flex-1 cursor-pointer"
               >
                 {isMarkingStale ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -398,7 +398,7 @@ export function ResearchRunResults({
             <Button
               onClick={handleSave}
               disabled={saveDisabled}
-              className="w-full cursor-pointer bg-foreground text-background hover:bg-foreground/90 sm:w-auto"
+              className="min-w-0 flex-1 cursor-pointer bg-foreground text-background hover:bg-foreground/90"
             >
               {isSaving ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -425,8 +425,8 @@ export function ResearchRunResults({
         {isCompletedWithEvents ? (
           <Show when="signed-in">
             <div className="space-y-4 rounded-xl border border-border bg-card/40 p-4 sm:p-5">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                <div className="min-w-0 space-y-2">
                   <Label
                     htmlFor="portfolio-default-name-results"
                     className="font-mono text-[10px] tracking-widest text-muted-foreground/70 uppercase"
@@ -441,7 +441,7 @@ export function ResearchRunResults({
                     className="border-border bg-card/80"
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <Label
                     htmlFor="portfolio-save-target-results"
                     className="font-mono text-[10px] tracking-widest text-muted-foreground/70 uppercase"
