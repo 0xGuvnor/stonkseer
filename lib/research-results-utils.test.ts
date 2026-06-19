@@ -4,6 +4,8 @@ import type { Id } from "@/convex/_generated/dataModel"
 import type { CatalystEventView } from "@/types/research-ui"
 
 import {
+  ALL_EXPECTED_IMPACTS,
+  filterCatalystEventsByImpact,
   isUnknownTimingWithoutQuarter,
   sortCatalystEventsByAnchor,
 } from "./research-results-utils"
@@ -64,6 +66,36 @@ describe("isUnknownTimingWithoutQuarter", () => {
         fixtureNow,
       ),
     ).toBe(false)
+  })
+})
+
+describe("filterCatalystEventsByImpact", () => {
+  test("returns all events when every impact level is selected", () => {
+    const events = [
+      catalystEvent("evt_high", { expectedImpact: "high" }),
+      catalystEvent("evt_medium", { expectedImpact: "medium" }),
+      catalystEvent("evt_low", { expectedImpact: "low" }),
+    ]
+    const selected = new Set(ALL_EXPECTED_IMPACTS)
+
+    expect(filterCatalystEventsByImpact(events, selected)).toEqual(events)
+  })
+
+  test("filters to a single impact level", () => {
+    const high = catalystEvent("evt_high", { expectedImpact: "high" })
+    const medium = catalystEvent("evt_medium", { expectedImpact: "medium" })
+    const low = catalystEvent("evt_low", { expectedImpact: "low" })
+    const selected = new Set<"high" | "medium" | "low">(["high"])
+
+    expect(
+      filterCatalystEventsByImpact([high, medium, low], selected),
+    ).toEqual([high])
+  })
+
+  test("returns empty array when no impact levels are selected", () => {
+    const events = [catalystEvent("evt_high", { expectedImpact: "high" })]
+
+    expect(filterCatalystEventsByImpact(events, new Set())).toEqual([])
   })
 })
 

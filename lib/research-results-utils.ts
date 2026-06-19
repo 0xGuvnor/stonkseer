@@ -44,6 +44,24 @@ export function isUnknownTimingWithoutQuarter(
   )
 }
 
+export type ExpectedImpact = CatalystEventView["expectedImpact"]
+
+export const ALL_EXPECTED_IMPACTS: readonly ExpectedImpact[] = [
+  "high",
+  "medium",
+  "low",
+] as const
+
+export function filterCatalystEventsByImpact<T extends CatalystEventView>(
+  events: T[],
+  selected: ReadonlySet<ExpectedImpact>,
+): T[] {
+  if (selected.size === ALL_EXPECTED_IMPACTS.length) {
+    return events
+  }
+  return events.filter((event) => selected.has(event.expectedImpact))
+}
+
 export function sortCatalystEventsByAnchor(
   events: CatalystEventView[],
   now: number = Date.now(),

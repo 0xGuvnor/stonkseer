@@ -20,12 +20,16 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ImpactMeter } from "@/components/research/impact-meter"
+import { CatalystImpactFilter } from "@/components/research/catalyst-impact-filter"
 import {
+  ALL_EXPECTED_IMPACTS,
   eventTimingLabel,
+  filterCatalystEventsByImpact,
   formatQuarterLabel,
   parseSortAnchor,
   quarterKeyFromDate,
   sortCatalystEventsByAnchor,
+  type ExpectedImpact,
 } from "@/lib/research-results-utils"
 import { formatSourceLinkLabel } from "@/lib/source-link-label"
 import { cn } from "@/lib/utils"
@@ -249,25 +253,48 @@ export function CatalystEventsTable({
   variant = "default",
 }: CatalystEventsTableProps) {
   const [resolvedNow] = useState(() => nowProp ?? Date.now())
+  const [selectedImpacts, setSelectedImpacts] = useState<Set<ExpectedImpact>>(
+    () => new Set(ALL_EXPECTED_IMPACTS),
+  )
   const now = nowProp ?? resolvedNow
+  const filteredEvents = filterCatalystEventsByImpact(events, selectedImpacts)
   const sortedEvents =
-    events.length > 0 ? sortCatalystEventsByAnchor(events, now) : []
+    filteredEvents.length > 0
+      ? sortCatalystEventsByAnchor(filteredEvents, now)
+      : []
   const isResults = variant === "results"
+  const hasEvents = events.length > 0
+  const hasFilteredRows = sortedEvents.length > 0
 
   const headerClassName = isResults
     ? "font-mono text-[10px] tracking-widest text-muted-foreground/70 uppercase"
     : "text-xs font-semibold tracking-wider text-muted-foreground uppercase"
 
+  const frameClassName =
+    className ??
+    (isResults
+      ? "overflow-hidden rounded-xl border border-border/40 bg-card/30"
+      : "glass overflow-hidden rounded-2xl ring-1 ring-border/60")
+
+  const toolbarClassName = isResults
+    ? "border-border/40 border-b px-4 py-3"
+    : "border-border/60 border-b px-4 py-3"
+
   return (
-    <div
-      className={
-        className ??
-        (isResults
-          ? "overflow-hidden rounded-xl border border-border/40 bg-card/30"
-          : "glass overflow-hidden rounded-2xl ring-1 ring-border/60")
-      }
-    >
-      <Table className={showSymbolColumn ? "min-w-[980px]" : "min-w-[920px]"}>
+    <div className={frameClassName}>
+      {hasEvents ? (
+        <div className={toolbarClassName}>
+          <CatalystImpactFilter
+            selected={selectedImpacts}
+            onSelectedChange={setSelectedImpacts}
+            filteredCount={filteredEvents.length}
+            totalCount={events.length}
+            variant={variant}
+          />
+        </div>
+      ) : null}
+      {hasFilteredRows ? (
+        <Table className={showSymbolColumn ? "min-w-[980px]" : "min-w-[920px]"}>
         <TableHeader>
           <TableRow
             className={
@@ -379,7 +406,12 @@ export function CatalystEventsTable({
             )
           })}
         </TableBody>
-      </Table>
+        </Table>
+      ) : hasEvents ? (
+        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+          No events match the selected impact levels.
+        </p>
+      ) : null}
     </div>
   )
 }
