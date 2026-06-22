@@ -420,7 +420,7 @@ export function ResearchRunResults({
                 variant="outline"
                 onClick={handleMarkStale}
                 disabled={isMarkingStale}
-                className="min-w-0 flex-1 cursor-pointer sm:w-auto sm:flex-none"
+                className="min-w-0 flex-1 sm:w-auto sm:flex-none"
               >
                 {isMarkingStale ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -434,7 +434,7 @@ export function ResearchRunResults({
               variant="outline"
               onClick={handleCopyData}
               disabled={displayCatalystEvents.length === 0}
-              className="min-w-0 flex-1 cursor-pointer sm:w-auto sm:flex-none"
+              className="min-w-0 flex-1 sm:w-auto sm:flex-none"
             >
               <Copy className="size-4" aria-hidden />
               Copy data
@@ -442,7 +442,7 @@ export function ResearchRunResults({
             <Button
               onClick={handleSave}
               disabled={saveDisabled}
-              className="min-w-0 flex-1 cursor-pointer bg-foreground text-background hover:bg-foreground/90 sm:w-auto sm:flex-none"
+              className="min-w-0 flex-1 bg-foreground text-background hover:bg-foreground/90 sm:w-auto sm:flex-none"
             >
               {isSaving ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden />

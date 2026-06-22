@@ -176,7 +176,7 @@ export function ResearchNotifyToggle({
         <div className="flex items-center justify-between gap-3">
           <Label
             htmlFor={`research-notify-${runId}`}
-            className="cursor-pointer text-sm font-medium"
+            className="text-sm font-medium"
           >
             Notify me when research finishes
           </Label>

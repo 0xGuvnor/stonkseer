@@ -316,7 +316,7 @@ function SidebarSearch({
           <SidebarMenuButton
             tooltip="Search"
             aria-label="Search a ticker"
-            className="cursor-pointer rounded-md"
+            className="rounded-md"
             onClick={focusHomeSearch}
           >
             <Search />
@@ -425,7 +425,7 @@ function RecentSearches({ onNavigate }: { onNavigate: () => void }) {
           {recent.map(({ symbol }) => (
             <SidebarMenuItem key={symbol}>
               <SidebarMenuButton
-                className="cursor-pointer rounded-md font-mono text-xs font-medium tracking-tight"
+                className="rounded-md font-mono text-xs font-medium tracking-tight"
                 onClick={() => void openRecentSearch(symbol)}
               >
                 <span className="truncate">{symbol}</span>
