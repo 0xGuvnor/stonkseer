@@ -13,6 +13,7 @@ export function formatResearchCatalystThreadCoherenceBlock(): string {
   return [
     "Roundup articles can support multiple catalyst rows, but each row must stay on one catalyst thread.",
     "For each row, the title, timing fields, summary, whyItMatters, and cited sources must describe the same catalyst thread; do not take a title from one section and timing or summary from another.",
+    "The facility or site named in the title must match the site discussed in summary and sources; if they differ, split into separate rows or fix the title — do not output one site in the title with another site only in the body.",
     "If a roundup source discusses unrelated catalysts, split them into separate rows with matching title, timing, summary, and source support; if a coherent row cannot be formed, omit it.",
     "Past dates are valid as timing only when they mark the start of an active ongoing catalyst; stale one-time events should be excluded or reframed around a source-backed future milestone.",
   ].join("\n")

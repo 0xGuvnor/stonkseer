@@ -26,6 +26,7 @@ describe("formatResearchCatalystThreadCoherenceBlock", () => {
     expect(block).toContain("one catalyst thread")
     expect(block).toContain("title, timing fields, summary")
     expect(block).toContain("do not take a title from one section")
+    expect(block).toContain("facility or site named in the title")
   })
 
   test("allows ongoing starts without stale one-time events", () => {

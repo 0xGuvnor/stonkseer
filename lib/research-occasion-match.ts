@@ -139,6 +139,10 @@ export function conflictingProceedingIds(
   return true
 }
 
+function bothOpenOngoingTiming(a: CatalystEvent, b: CatalystEvent): boolean {
+  return a.timingShape === "open" && b.timingShape === "open"
+}
+
 export function hasConflictingTimingAnchors(
   a: CatalystEvent,
   b: CatalystEvent,
@@ -159,20 +163,22 @@ export function hasConflictingTimingAnchors(
     return true
   }
 
-  if (
-    a.windowStart !== undefined &&
-    b.windowStart !== undefined &&
-    a.windowStart !== b.windowStart
-  ) {
-    return true
-  }
+  if (!bothOpenOngoingTiming(a, b)) {
+    if (
+      a.windowStart !== undefined &&
+      b.windowStart !== undefined &&
+      a.windowStart !== b.windowStart
+    ) {
+      return true
+    }
 
-  if (
-    a.windowEnd !== undefined &&
-    b.windowEnd !== undefined &&
-    a.windowEnd !== b.windowEnd
-  ) {
-    return true
+    if (
+      a.windowEnd !== undefined &&
+      b.windowEnd !== undefined &&
+      a.windowEnd !== b.windowEnd
+    ) {
+      return true
+    }
   }
 
   return false

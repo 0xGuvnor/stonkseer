@@ -91,6 +91,49 @@ describe("scoreOccasionPair", () => {
     expect(scoreOccasionPair(q2, q3).kind).toBe("reject")
   })
 
+  test("strong match for same ongoing program with different open windowStart anchors", () => {
+    const construction = baseEvent({
+      title: "Optimus Second Factory Construction at Giga Texas",
+      summary:
+        "A second Optimus factory is under construction at Gigafactory Texas, reported during the Q1 2026 earnings call.",
+      timingShape: "open",
+      windowStart: "2026-01-01",
+      datePrecision: "month",
+      sources: [
+        {
+          url: "https://example.com/q1-earnings",
+          title: "Q1 earnings",
+          publisher: "example.com",
+          quote: "Second Optimus factory at Giga Texas.",
+          supportsFields: ["summary"],
+        },
+      ],
+    })
+
+    const buildout = baseEvent({
+      title: "Optimus Second Production Line Buildout at Giga Texas",
+      summary:
+        "Production line buildout continues at Gigafactory Texas with ramp activity intensifying in mid-2026.",
+      timingShape: "open",
+      windowStart: "2026-07-01",
+      datePrecision: "month",
+      sources: [
+        {
+          url: "https://example.com/buildout",
+          title: "Buildout update",
+          publisher: "example.com",
+          quote: "Giga Texas Optimus line buildout in July 2026.",
+          supportsFields: ["summary"],
+        },
+      ],
+    })
+
+    const result = scoreOccasionPair(construction, buildout)
+
+    expect(result.kind).toBe("strong")
+    expect(result.score).toBeGreaterThanOrEqual(3)
+  })
+
   test("keeps separate unrelated products in the same half", () => {
     const battery = baseEvent({
       title: "Grid Battery 3 production start",
@@ -232,5 +275,44 @@ describe("dedupeIntraRunCatalystEventsDeterministic", () => {
     expect(events[0]!.periodKey).toBe("2026-H2")
     expect(events[0]!.sources).toHaveLength(3)
     expect(events[0]!.title).toContain("Regional Megafactory")
+  })
+
+  test("merges same-site ongoing program rows with different open windowStart", () => {
+    const construction = baseEvent({
+      title: "Optimus Second Factory Construction at Giga Texas",
+      summary:
+        "A second Optimus factory is under construction at Gigafactory Texas from the Q1 2026 earnings call.",
+      timingShape: "open",
+      windowStart: "2026-01-01",
+      datePrecision: "month",
+    })
+
+    const buildout = baseEvent({
+      title: "Optimus Second Production Line Buildout at Giga Texas",
+      summary:
+        "Production line buildout at Gigafactory Texas with mid-2026 ramp milestones.",
+      timingShape: "open",
+      windowStart: "2026-07-01",
+      datePrecision: "month",
+      sources: [
+        {
+          url: "https://example.com/buildout",
+          title: "Buildout update",
+          publisher: "example.com",
+          quote: "July 2026 Giga Texas Optimus buildout.",
+          supportsFields: ["summary"],
+        },
+      ],
+    })
+
+    const { events, mergedCount } = dedupeIntraRunCatalystEventsDeterministic([
+      construction,
+      buildout,
+    ])
+
+    expect(mergedCount).toBe(1)
+    expect(events).toHaveLength(1)
+    expect(events[0]!.sources).toHaveLength(2)
+    expect(events[0]!.title).toContain("Giga Texas")
   })
 })
