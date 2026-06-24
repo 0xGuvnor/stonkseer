@@ -17,6 +17,7 @@ export function formatResearchTimingExtractionBlock(): string {
     "For month-fuzzy anchors, prefer timingShape period with periodKey YYYY-MM and datePrecision month — not partial windowStart values like 2026-04 without a day. Use point or from only when a specific day is source-backed.",
     "When sources give only the covered quarter but release timing is inferable from cadence or prior reporting, anchor the expected release month with status likely or speculative and lower confidence — do not fall back to the covered quarter as periodKey.",
     "Reserve timingShape unknown only when no year, quarter, month, deadline, or bounded window appears in the event title or cited sources. A provider report saying 'timing unclear' does not override a release month or quarter named in snippets.",
+    "Multi-quarter spans (e.g. Q3–Q4 2026) → timingShape closed_window with ISO month bounds (start of first quarter through end of last) or timingShape period with periodKey 2026-H2 when that half-year matches; never unknown when a range is stated.",
     "Anti-inference scope: never anchor windowStart to today's run date or windowEnd to the 12-month research horizon unless a source explicitly does. Allowed: extracting 2026-07 from 'expected early July 2026' or a source-backed publication month.",
   ].join("\n")
 }

@@ -185,6 +185,20 @@ describe("normalizeCatalystEventTiming", () => {
     expect(normalized.windowStart).toBeUndefined()
     expect(normalized.datePrecision).toBe("month")
   })
+
+  test("upgrades unknown shape when periodKey is set before coercion", () => {
+    const event: CatalystResearch["events"][number] = {
+      ...baseEventFields,
+      timingShape: "unknown",
+      periodKey: "2026-Q3",
+      datePrecision: "quarter",
+    }
+
+    const normalized = normalizeCatalystEventTiming(event, options)
+
+    expect(normalized.timingShape).toBe("period")
+    expect(normalized.periodKey).toBe("2026-Q3")
+  })
 })
 
 describe("eventTimingLabel", () => {

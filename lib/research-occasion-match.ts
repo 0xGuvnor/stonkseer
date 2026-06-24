@@ -1,3 +1,4 @@
+import { eventTimingLabel } from "./catalyst-timing"
 import type { CatalystResearch } from "./research-contract"
 import { normalizeSourceUrl } from "./research-source-url"
 
@@ -333,6 +334,57 @@ function preferTimingShape(
   return a
 }
 
+function hasDisplayableTimingFields(event: CatalystEvent): boolean {
+  return eventTimingLabel(event) !== "Timing unknown"
+}
+
+function pickTimingFieldsFromMerge(
+  primary: CatalystEvent,
+  secondary: CatalystEvent,
+): Pick<
+  CatalystEvent,
+  | "timingShape"
+  | "windowStart"
+  | "windowEnd"
+  | "periodKey"
+  | "expectedDate"
+  | "datePrecision"
+> {
+  const primaryDisplayable = hasDisplayableTimingFields(primary)
+  const secondaryDisplayable = hasDisplayableTimingFields(secondary)
+
+  if (primaryDisplayable && !secondaryDisplayable) {
+    return {
+      timingShape: primary.timingShape,
+      windowStart: primary.windowStart,
+      windowEnd: primary.windowEnd,
+      periodKey: primary.periodKey,
+      expectedDate: primary.expectedDate,
+      datePrecision: primary.datePrecision,
+    }
+  }
+
+  if (secondaryDisplayable && !primaryDisplayable) {
+    return {
+      timingShape: secondary.timingShape,
+      windowStart: secondary.windowStart,
+      windowEnd: secondary.windowEnd,
+      periodKey: secondary.periodKey,
+      expectedDate: secondary.expectedDate,
+      datePrecision: secondary.datePrecision,
+    }
+  }
+
+  return {
+    timingShape: preferTimingShape(primary.timingShape, secondary.timingShape),
+    windowStart: primary.windowStart ?? secondary.windowStart,
+    windowEnd: primary.windowEnd ?? secondary.windowEnd,
+    periodKey: primary.periodKey ?? secondary.periodKey,
+    expectedDate: primary.expectedDate ?? secondary.expectedDate,
+    datePrecision: primary.datePrecision,
+  }
+}
+
 function titleSpecificity(title: string): number {
   return normalizeTokens(title).size
 }
@@ -369,17 +421,14 @@ export function mergeOccasionEvents(
       : secondary.whyItMatters
 
   const base = primary.confidence >= secondary.confidence ? primary : secondary
+  const timing = pickTimingFieldsFromMerge(primary, secondary)
 
   return {
     ...base,
     title: preferTitle(primary.title, secondary.title),
     summary: preferredSummary,
     whyItMatters: preferredWhy,
-    timingShape: preferTimingShape(primary.timingShape, secondary.timingShape),
-    windowStart: primary.windowStart ?? secondary.windowStart,
-    windowEnd: primary.windowEnd ?? secondary.windowEnd,
-    periodKey: primary.periodKey ?? secondary.periodKey,
-    expectedDate: primary.expectedDate ?? secondary.expectedDate,
+    ...timing,
     confidence: Math.max(primary.confidence, secondary.confidence),
     status:
       primary.status === "confirmed" || secondary.status === "confirmed"

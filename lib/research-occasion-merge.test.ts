@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  formatResearchCatalystThreadCoherenceBlock,
   formatResearchOccasionExtractionSelfCheck,
   formatResearchOccasionMergeBlock,
   formatResearchOccasionReportBlock,
@@ -14,6 +15,26 @@ describe("formatResearchOccasionMergeBlock", () => {
     expect(block).toContain("production start")
     expect(block).toContain("not separate rows")
     expect(block).not.toContain("Megapack")
+  })
+})
+
+describe("formatResearchCatalystThreadCoherenceBlock", () => {
+  test("keeps roundup rows on one catalyst thread", () => {
+    const block = formatResearchCatalystThreadCoherenceBlock()
+
+    expect(block).toContain("Roundup articles can support multiple catalyst rows")
+    expect(block).toContain("one catalyst thread")
+    expect(block).toContain("title, timing fields, summary")
+    expect(block).toContain("do not take a title from one section")
+  })
+
+  test("allows ongoing starts without stale one-time events", () => {
+    const block = formatResearchCatalystThreadCoherenceBlock()
+
+    expect(block).toContain("Past dates are valid")
+    expect(block).toContain("active ongoing catalyst")
+    expect(block).toContain("stale one-time events")
+    expect(block).toContain("source-backed future milestone")
   })
 })
 
@@ -32,5 +53,6 @@ describe("formatResearchOccasionExtractionSelfCheck", () => {
 
     expect(block).toContain("same dated or named occasion")
     expect(block).toContain("not only regulatory proceedings")
+    expect(block).toContain("timingShape must not be unknown")
   })
 })

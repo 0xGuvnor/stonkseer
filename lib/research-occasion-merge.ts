@@ -9,6 +9,15 @@ export function formatResearchOccasionMergeBlock(): string {
   ].join("\n")
 }
 
+export function formatResearchCatalystThreadCoherenceBlock(): string {
+  return [
+    "Roundup articles can support multiple catalyst rows, but each row must stay on one catalyst thread.",
+    "For each row, the title, timing fields, summary, whyItMatters, and cited sources must describe the same catalyst thread; do not take a title from one section and timing or summary from another.",
+    "If a roundup source discusses unrelated catalysts, split them into separate rows with matching title, timing, summary, and source support; if a coherent row cannot be formed, omit it.",
+    "Past dates are valid as timing only when they mark the start of an active ongoing catalyst; stale one-time events should be excluded or reframed around a source-backed future milestone.",
+  ].join("\n")
+}
+
 export function formatResearchOccasionReportBlock(): string {
   return [
     "For each distinct real-world occasion, write one catalyst entry with the site or venue, expected timing, and milestone type stated once.",
@@ -17,5 +26,8 @@ export function formatResearchOccasionReportBlock(): string {
 }
 
 export function formatResearchOccasionExtractionSelfCheck(): string {
-  return "Before returning JSON, merge rows that describe the same dated or named occasion — not only regulatory proceedings, investigations, or litigation."
+  return [
+    "Before returning JSON, merge rows that describe the same dated or named occasion — not only regulatory proceedings, investigations, or litigation.",
+    "If summary or sources name a month, quarter, year, or date range, timingShape must not be unknown.",
+  ].join(" ")
 }

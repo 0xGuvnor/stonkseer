@@ -454,6 +454,44 @@ export type NormalizeCatalystTimingOptions = {
   researchRunDate: string
 }
 
+export function upgradeContradictoryTimingShape(
+  event: CatalystResearch["events"][number],
+): CatalystResearch["events"][number] {
+  if (event.timingShape === "unknown") {
+    if (event.expectedDate) {
+      return { ...event, timingShape: "point" }
+    }
+    if (event.windowStart && event.windowEnd) {
+      return { ...event, timingShape: "closed_window" }
+    }
+    if (event.windowStart) {
+      return { ...event, timingShape: "from" }
+    }
+    if (event.windowEnd) {
+      return { ...event, timingShape: "by" }
+    }
+    if (event.periodKey) {
+      return { ...event, timingShape: "period" }
+    }
+    return event
+  }
+
+  if (event.timingShape === "closed_window") {
+    if (event.windowStart && !event.windowEnd) {
+      return { ...event, timingShape: "from" }
+    }
+    if (!event.windowStart && event.windowEnd) {
+      return { ...event, timingShape: "by" }
+    }
+  }
+
+  if (event.timingShape === "period" && !event.periodKey) {
+    return { ...event, timingShape: "unknown" }
+  }
+
+  return event
+}
+
 export function normalizeCatalystEventTiming(
   event: CatalystResearch["events"][number],
   options: NormalizeCatalystTimingOptions,
@@ -462,6 +500,7 @@ export function normalizeCatalystEventTiming(
   normalized = coerceFromPastStartToOpen(normalized, options.researchRunDate)
   normalized = stripRunDateStart(normalized, options.researchRunDate)
   normalized = coerceMonthOnlyWindowStart(normalized)
+  normalized = upgradeContradictoryTimingShape(normalized)
   return coerceShapeFields(normalized)
 }
 

@@ -20,6 +20,11 @@ import type { Id } from "./_generated/dataModel"
 import { ConvexError, v } from "convex/values"
 import { researchStatusValidator } from "./schema"
 import {
+  buildResearchHorizonEnd,
+  buildResearchRunDate,
+} from "../lib/catalyst-timing"
+import { repairCatalystEventTiming } from "../lib/catalyst-timing-infer"
+import {
   catalystResearchAiSchema,
   MAX_CATALYST_EVENTS,
   normalizeCatalystResearchAi,
@@ -48,6 +53,7 @@ import {
 import { verifyAndFilterEvents } from "../lib/research-grounding"
 import { dedupeIntraRunCatalystEvents } from "../lib/research-inrun-dedupe"
 import {
+  formatResearchCatalystThreadCoherenceBlock,
   formatResearchOccasionExtractionSelfCheck,
   formatResearchOccasionMergeBlock,
   formatResearchOccasionReportBlock,
@@ -1003,6 +1009,7 @@ function buildCatalystReportPrompt(
     "Write the report as a list of distinct catalysts. For each catalyst give: a short name, expected timing (exact date, bounded window, deadline, fiscal quarter as YYYY-Qn, ongoing/open-ended, or timing unclear only when no anchor exists), whether it is confirmed, likely, or speculative, what it is, why it could move the stock, and the source URLs that support it.",
     formatResearchTimingReportBlock(),
     formatResearchOccasionReportBlock(),
+    formatResearchCatalystThreadCoherenceBlock(),
     formatResearchProceedingReportBlock(),
     "For ongoing or open-ended milestones, describe timing qualitatively (e.g. gradual rollout, under review) — do not invent a one-year end date from the research scope.",
     "Distinguish milestones already in progress (cite when they began if sources say so) from those expected to begin in the future.",
@@ -1920,6 +1927,18 @@ function mergeBaselineEarningsEvents(
   return [...events, ...baselineEvents]
 }
 
+function repairEventsTiming(
+  events: CatalystResearch["events"],
+  now: number,
+): CatalystResearch["events"] {
+  const timingOptions = {
+    researchHorizonEnd: buildResearchHorizonEnd(now),
+    researchRunDate: buildResearchRunDate(now),
+  }
+
+  return events.map((event) => repairCatalystEventTiming(event, timingOptions, now))
+}
+
 function buildDeterministicEvents(
   symbol: string,
   snippets: SourceSnippet[]
@@ -2036,6 +2055,7 @@ async function buildAiEvents(
     "When sources describe the same dated or named real-world occasion (same flagship event, schedule, venue, or official page), output one merged event with the dominant eventType—put expected reveals in summary and whyItMatters instead of duplicate rows. Do not stitch conflicting share counts, percentages, or dates from different sources into one event; use separate rows or one lower-confidence row.",
     formatResearchProceedingMergeBlock(),
     formatResearchOccasionMergeBlock(),
+    formatResearchCatalystThreadCoherenceBlock(),
     formatResearchProceedingExtractionSelfCheck(),
     formatResearchOccasionExtractionSelfCheck(),
     "Every event must cite at least one source whose URL appears in the reports or snippets. Never invent URLs. For each source quote: copy the snippet quote verbatim when a snippet with that URL exists; otherwise quote the specific report claim that the URL supports.",
@@ -2269,7 +2289,7 @@ export const runResearch = internalAction({
         evidenceSnippets,
         seenUrls,
       )
-      const events = verified.events
+      let events = repairEventsTiming(verified.events, researchStartedAt)
 
       if (verified.droppedCount > 0) {
         console.warn(
@@ -2292,7 +2312,10 @@ export const runResearch = internalAction({
         gatewayCtx,
         symbol: run.symbol,
       })
-      const finalEvents = finalDeduped.events
+      const finalEvents = repairEventsTiming(
+        finalDeduped.events,
+        researchStartedAt,
+      )
 
       if (deepRead.deepReadError) {
         console.warn(

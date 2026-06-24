@@ -148,6 +148,30 @@ describe("mergeOccasionEvents", () => {
       "Grid Battery 3 Production Start at Regional Megafactory",
     )
   })
+
+  test("prefers displayable timing over empty closed_window on higher-confidence row", () => {
+    const incomplete = baseEvent({
+      title: "Grid Battery 3 Production Start",
+      summary: "Production lines being readied.",
+      timingShape: "closed_window",
+      datePrecision: "quarter",
+      confidence: 0.9,
+    })
+
+    const timed = baseEvent({
+      title: "Grid Battery 3 Production Start at Regional Megafactory",
+      summary: "Manufacturing expected in H2 2026.",
+      timingShape: "period",
+      periodKey: "2026-H2",
+      datePrecision: "half",
+      confidence: 0.6,
+    })
+
+    const merged = mergeOccasionEvents(incomplete, timed)
+
+    expect(merged.timingShape).toBe("period")
+    expect(merged.periodKey).toBe("2026-H2")
+  })
 })
 
 describe("dedupeIntraRunCatalystEventsDeterministic", () => {

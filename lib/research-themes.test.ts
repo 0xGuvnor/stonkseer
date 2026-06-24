@@ -53,6 +53,14 @@ describe("formatResearchTimingExtractionBlock", () => {
     expect(block).toContain("12-month research horizon")
     expect(block).toContain("Allowed: extracting 2026-07")
   })
+
+  test("covers multi-quarter span guidance", () => {
+    const block = formatResearchTimingExtractionBlock()
+
+    expect(block).toContain("Multi-quarter spans")
+    expect(block).toContain("Q3–Q4 2026")
+    expect(block).toContain("2026-H2")
+  })
 })
 
 describe("formatResearchTimingReportBlock", () => {
