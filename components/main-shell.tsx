@@ -27,8 +27,8 @@ export function MainShell({ children }: { children: ReactNode }) {
       <SidebarInset className="relative min-h-0 overflow-hidden">
         <AppBackground />
         <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
-          {/* Mobile-only: blurred, borderless top bar with the sidebar trigger */}
-          <div className="glass z-40 flex h-12 shrink-0 items-center gap-2 px-3 md:hidden">
+          {/* Mobile-only: matches ticker tape surface */}
+          <div className="z-40 flex h-12 shrink-0 items-center gap-2 bg-background px-3 md:hidden">
             <SidebarTrigger />
             <p
               className={cn(
