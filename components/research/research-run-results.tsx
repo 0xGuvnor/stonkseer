@@ -116,10 +116,10 @@ function ResearchRunHeading({
       {companyName ? (
         <>
           {companyName} (
-          <span className="font-mono text-primary">{symbol}</span>)
+          <span className="font-mono">{symbol}</span>)
         </>
       ) : (
-        <span className="font-mono text-primary">{symbol}</span>
+        <span className="font-mono">{symbol}</span>
       )}{" "}
       {suffix}
     </>
