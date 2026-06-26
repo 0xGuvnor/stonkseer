@@ -350,7 +350,11 @@ export function MarketHeatBackdrop({ className }: MarketHeatBackdropProps) {
       document.removeEventListener("visibilitychange", onVisibilityChange)
       syncRef.current = () => {}
       renderFrameRef.current = () => {}
-      gl.getExtension("WEBGL_lose_context")?.loseContext()
+      gl.deleteProgram(program)
+      gl.deleteBuffer(buffer)
+      // Do not call WEBGL_lose_context.loseContext() here. On client nav back
+      // to this page the next canvas's context is created in the same epoch and
+      // comes up already lost, so the fog never draws. GC reclaims the context.
     }
   }, [])
 
