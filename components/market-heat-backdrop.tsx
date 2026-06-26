@@ -25,6 +25,7 @@ uniform vec3 u_bg;
 uniform vec3 u_mint;
 uniform vec3 u_coral;
 uniform float u_gain;
+uniform float u_strength;
 float hash(vec2 p){p=fract(p*vec2(123.34,345.45));p+=dot(p,p+34.345);return fract(p.x*p.y);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));vec2 u=f*f*(3.0-2.0*f);return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}
 float fbm(vec2 p){float v=0.0;float a=0.5;for(int i=0;i<5;i++){v+=a*noise(p);p*=2.0;a*=0.5;}return v;}
@@ -35,7 +36,7 @@ void main(){
   float t=u_time*0.06;
   float f=fbm(p+vec2(t,-t*0.4));
   f=fbm(p+f);
-  float intensity=smoothstep(0.25,0.9,f)*0.55;
+  float intensity=smoothstep(0.18,0.86,f)*0.62*u_strength;
   float d=distance(uv,vec2(0.5,0.42));
   intensity*=smoothstep(0.95,0.1,d);
   float m=clamp(u_market*0.5+0.5,0.0,1.0);
@@ -77,18 +78,34 @@ const DEFAULT_THEME_COLORS: ThemeColors = {
 }
 
 const DARK_GAIN = 0.6
-const LIGHT_GAIN = 0.22
+const LIGHT_GAIN = 0.68
+const DARK_STRENGTH = 1
+const LIGHT_STRENGTH = 1.8
 
-function readThemeState(): { colors: ThemeColors; gain: number } {
+type ThemeState = {
+  colors: ThemeColors
+  gain: number
+  strength: number
+}
+
+function readThemeState(): ThemeState {
   const root = document.documentElement
   const styles = getComputedStyle(root)
+  const isDark = root.classList.contains("dark")
   return {
-    colors: {
-      bg: parseCssColorToRgb(styles.getPropertyValue("--background").trim()),
-      mint: parseCssColorToRgb(styles.getPropertyValue("--primary").trim()),
-      coral: parseCssColorToRgb(styles.getPropertyValue("--down").trim()),
-    },
-    gain: root.classList.contains("dark") ? DARK_GAIN : LIGHT_GAIN,
+    colors: isDark
+      ? {
+          bg: parseCssColorToRgb(styles.getPropertyValue("--background").trim()),
+          mint: parseCssColorToRgb(styles.getPropertyValue("--primary").trim()),
+          coral: parseCssColorToRgb(styles.getPropertyValue("--down").trim()),
+        }
+      : {
+          bg: parseCssColorToRgb(styles.getPropertyValue("--secondary").trim()),
+          mint: parseCssColorToRgb(styles.getPropertyValue("--chart-1").trim()),
+          coral: parseCssColorToRgb(styles.getPropertyValue("--destructive").trim()),
+        },
+    gain: isDark ? DARK_GAIN : LIGHT_GAIN,
+    strength: isDark ? DARK_STRENGTH : LIGHT_STRENGTH,
   }
 }
 
@@ -138,6 +155,7 @@ type UniformLocations = {
   mint: WebGLUniformLocation | null
   coral: WebGLUniformLocation | null
   gain: WebGLUniformLocation | null
+  strength: WebGLUniformLocation | null
 }
 
 function getUniformLocations(
@@ -152,6 +170,7 @@ function getUniformLocations(
     mint: gl.getUniformLocation(program, "u_mint"),
     coral: gl.getUniformLocation(program, "u_coral"),
     gain: gl.getUniformLocation(program, "u_gain"),
+    strength: gl.getUniformLocation(program, "u_strength"),
   }
 }
 
@@ -186,6 +205,7 @@ export function MarketHeatBackdrop({ className }: MarketHeatBackdropProps) {
 
   const colorsRef = useRef<ThemeColors>(DEFAULT_THEME_COLORS)
   const gainRef = useRef(DARK_GAIN)
+  const strengthRef = useRef(DARK_STRENGTH)
   const displayedMarketRef = useRef(targetMarket)
   const renderFrameRef = useRef<(time: number, market: number) => void>(() => {})
   const syncRef = useRef<() => void>(() => {})
@@ -202,6 +222,7 @@ export function MarketHeatBackdrop({ className }: MarketHeatBackdropProps) {
       const next = readThemeState()
       colorsRef.current = next.colors
       gainRef.current = next.gain
+      strengthRef.current = next.strength
       if (prefersReducedMotionRef.current) {
         renderFrameRef.current(STATIC_TIME, targetMarketRef.current)
       }
@@ -255,6 +276,7 @@ export function MarketHeatBackdrop({ className }: MarketHeatBackdropProps) {
     const initialTheme = readThemeState()
     colorsRef.current = initialTheme.colors
     gainRef.current = initialTheme.gain
+    strengthRef.current = initialTheme.strength
 
     const startTime = performance.now()
     let pausedAccum = 0
@@ -284,6 +306,7 @@ export function MarketHeatBackdrop({ className }: MarketHeatBackdropProps) {
       if (uniforms.mint) gl.uniform3f(uniforms.mint, ...colors.mint)
       if (uniforms.coral) gl.uniform3f(uniforms.coral, ...colors.coral)
       if (uniforms.gain) gl.uniform1f(uniforms.gain, gainRef.current)
+      if (uniforms.strength) gl.uniform1f(uniforms.strength, strengthRef.current)
 
       gl.drawArrays(gl.TRIANGLES, 0, 3)
     }
