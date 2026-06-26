@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form"
 
 import { CmdKHint } from "@/components/cmd-k-hint"
 import { HomeTypewriterSubheading } from "@/components/home-typewriter-subheading"
+import { MarketHeatBackdrop } from "@/components/market-heat-backdrop"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -71,8 +72,9 @@ export function HomeResearchClient() {
   const isSubmitting = form.formState.isSubmitting
 
   return (
-    <div className="relative flex h-full min-h-full flex-col overflow-hidden">
-      <section className="flex flex-1 flex-col items-center justify-center gap-8 overflow-y-auto px-5 py-10 sm:px-6">
+    <div className="relative isolate flex h-full min-h-full flex-col overflow-hidden">
+      <MarketHeatBackdrop className="z-0" />
+      <section className="relative z-10 flex flex-1 flex-col items-center justify-center gap-8 overflow-y-auto px-5 py-10 sm:px-6">
         <div className="mx-auto flex w-full max-w-xl flex-col items-center text-center">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1">

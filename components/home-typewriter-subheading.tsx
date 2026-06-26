@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react"
 
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion"
+
 const PHRASES = ["Earnings", "Launches", "Regulatory events"] as const
 
 const STATIC_SUFFIX = "that could move a stock over the next 12 months."
@@ -15,24 +17,6 @@ const SUBHEADING_SHELL_CLASS =
 const TYPE_MS = 60
 const DELETE_MS = 40
 const PAUSE_MS = 1500
-
-function usePrefersReducedMotion() {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
-    setPrefersReducedMotion(mediaQuery.matches)
-
-    function onChange(event: MediaQueryListEvent) {
-      setPrefersReducedMotion(event.matches)
-    }
-
-    mediaQuery.addEventListener("change", onChange)
-    return () => mediaQuery.removeEventListener("change", onChange)
-  }, [])
-
-  return prefersReducedMotion
-}
 
 function useTypewriterCycle(
   phrases: readonly string[],
