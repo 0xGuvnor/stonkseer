@@ -2,7 +2,6 @@
 
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
-import { useEffect, useState } from "react"
 
 import { Switch } from "@/components/ui/switch"
 import { SidebarMenuButton, useSidebar } from "@/components/ui/sidebar"
@@ -10,12 +9,7 @@ import { SidebarMenuButton, useSidebar } from "@/components/ui/sidebar"
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
   const { state, isMobile } = useSidebar()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
+  const hasResolvedTheme = resolvedTheme === "dark" || resolvedTheme === "light"
   const isDark = resolvedTheme === "dark"
   const isIconMode = state === "collapsed" && !isMobile
 
@@ -24,24 +18,25 @@ export function ThemeToggle() {
       <SidebarMenuButton
         onClick={() => setTheme(isDark ? "light" : "dark")}
         aria-label={
-          mounted
+          hasResolvedTheme
             ? isDark
               ? "Switch to light mode"
               : "Switch to dark mode"
             : "Toggle theme"
         }
-        tooltip={mounted ? (isDark ? "Light mode" : "Dark mode") : "Theme"}
+        tooltip={hasResolvedTheme ? (isDark ? "Light mode" : "Dark mode") : "Theme"}
       >
-        {mounted ? isDark ? <Moon /> : <Sun /> : <Sun />}
-        <span>{mounted ? (isDark ? "Light mode" : "Dark mode") : "Theme"}</span>
+        {hasResolvedTheme ? isDark ? <Moon /> : <Sun /> : <Sun />}
+        <span>
+          {hasResolvedTheme ? (isDark ? "Light mode" : "Dark mode") : "Theme"}
+        </span>
       </SidebarMenuButton>
     )
   }
 
-  // Expanded (or mobile sheet): icon + label + Switch
   return (
     <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-sidebar-foreground">
-      {mounted ? (
+      {hasResolvedTheme ? (
         isDark ? (
           <Moon className="size-4 shrink-0" />
         ) : (
@@ -52,7 +47,7 @@ export function ThemeToggle() {
       )}
       <span className="flex-1 truncate">Dark mode</span>
       <Switch
-        checked={mounted ? isDark : false}
+        checked={hasResolvedTheme ? isDark : false}
         onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
         aria-label="Toggle dark mode"
       />
