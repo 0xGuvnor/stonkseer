@@ -26,3 +26,17 @@
 - The Convex dashboard project is named `stonkseer`, and the local CLI has been connected to it; **pair Clerk and Convex per environment**—local/Cursor uses dev Clerk keys (`pk_test_`/`sk_test_`) with dev `NEXT_PUBLIC_CONVEX_URL` and dev Convex `CLERK_JWT_ISSUER_DOMAIN`; Vercel Production uses live Clerk with prod Convex URL and prod issuer (mixing dev/prod across surfaces breaks JWT validation in `convex/auth.config.ts`); default **Vercel Preview** to dev Clerk + dev Convex. Clerk frontend/server keys belong in Next.js/Vercel env; the Clerk JWT issuer belongs in each Convex deployment’s env vars; create the Clerk **“convex” JWT template** in both Clerk Development and Production. Ship Convex prod separately with `bunx convex deploy`—Vercel does not deploy the backend. If real Clerk keys are set, keyless `.clerk/` fallback is not required and generated `.clerk/` content stays out of git. Clerk **production** requires a **domain you own** with DNS records—not a `*.vercel.app` URL (per Clerk deployment docs).
 - Research runs take **~8–10+ minutes**, so the app offers **opt-in browser notifications** when a run finishes: entirely client-side via the **Notification API** plus a `localStorage` watchlist (keys `stonkseer:researchNotifyWatchlist`, default flag `stonkseer:researchNotifyDefault`, change event `stonkseer:research-notify-watchlist-changed`); helpers live in `lib/research-completion-notifications.ts`, the watcher provider in `components/providers/research-completion-notifier.tsx`, the opt-in switch in `components/research/research-notify-toggle.tsx`, with **sonner** toasts (`components/ui/sonner.tsx`) as in-page fallback.
 - xAI **Grok X** (`x_search`) via **Vercel AI Gateway** (`CATALYST_XAI_SEARCH_MODEL` as a gateway model id): the SDK may return **`tool-call`** and **`source`** URL parts without normalized **`tool-result`** rows, so `result.toolResults` can be empty even when search ran; derive X/Twitter snippets from parsed **`x_search` post text** only—do **not** attribute the model digest to X URLs. With **Vercel AI SDK 6**, top-level **`result.toolResults` reflects the last step only**—merge across **`result.steps`** when collecting posts, and if **no** `x_search` tool results appear in steps, **also** scan top-level **`result.toolResults`** for Gateway edge cases. Disabling **`enableImageUnderstanding` / `enableVideoUnderstanding`** saves cost and latency but can **reduce relevance** on posts that lean on images or video; env-gate or turn media back on if X evidence quality drops. Direct `xai.responses()` is a different auth path (`XAI_API_KEY`); do not assume it when the product standard is Gateway-only. `x_search` searches **X/Twitter only** (keyword, semantic, user, and thread modes—Grok picks; users never type queries) and is agentic server-side via the Responses API `max_turns`; the AI SDK `xSearch()` exposes only `allowedXHandles`/`excludedXHandles`/`fromDate`/`toDate`/`enableImage…`—there is **no client `maxUses`/step budget** like Exa or Anthropic.
+
+<!-- convex-ai-start -->
+
+This project uses [Convex](https://convex.dev) as its backend.
+
+When working on Convex code, **always read
+`convex/_generated/ai/guidelines.md` first** for important guidelines on
+how to correctly use Convex APIs and patterns. The file contains rules that
+override what you may have learned about Convex from training data.
+
+Convex agent skills for common tasks can be installed by running
+`npx convex ai-files install`.
+
+<!-- convex-ai-end -->
