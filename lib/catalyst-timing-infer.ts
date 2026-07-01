@@ -2,6 +2,8 @@ import {
   eventTimingLabel,
   normalizeCatalystEventTiming,
   normalizeTimingQualifier,
+  parseAnchorDate,
+  parseIsoPrefixToLocalDate,
   upgradeContradictoryTimingShape,
   type NormalizeCatalystTimingOptions,
 } from "./catalyst-timing"
@@ -110,15 +112,20 @@ function inferFromTextSegment(text: string): InferredTiming | null {
     }
   }
 
-  const singleQuarter = /\bQ([1-4])\s+(\d{4})\b/i.exec(normalized)
-  if (singleQuarter) {
-    const quarter = Number(singleQuarter[1])
-    const year = Number(singleQuarter[2])
-    return {
-      timingShape: "period",
-      periodKey: `${year}-Q${quarter}`,
-      datePrecision: "quarter",
-      specificity: 65,
+  const monthListBeforeYear =
+    /\b([A-Za-z]+)\s+(?:and|or|\/|,)\s+([A-Za-z]+)\s+(\d{4})\b/i.exec(
+      normalized,
+    )
+  if (monthListBeforeYear) {
+    const monthNum = MONTH_NAME_TO_NUM[monthListBeforeYear[1]!.toLowerCase()]
+    const year = Number(monthListBeforeYear[3])
+    if (monthNum) {
+      return {
+        timingShape: "period",
+        periodKey: isoMonth(year, monthNum),
+        datePrecision: "month",
+        specificity: 62,
+      }
     }
   }
 
@@ -136,6 +143,18 @@ function inferFromTextSegment(text: string): InferredTiming | null {
         datePrecision: "month",
         specificity: 65,
       }
+    }
+  }
+
+  const singleQuarter = /\bQ([1-4])\s+(\d{4})\b/i.exec(normalized)
+  if (singleQuarter) {
+    const quarter = Number(singleQuarter[1])
+    const year = Number(singleQuarter[2])
+    return {
+      timingShape: "period",
+      periodKey: `${year}-Q${quarter}`,
+      datePrecision: "quarter",
+      specificity: 65,
     }
   }
 
@@ -228,6 +247,78 @@ function pickBestInferredTiming(
   }
 
   return best
+}
+
+function isoDatePrefixFromRaw(raw: string | undefined): string | null {
+  if (!raw?.trim()) {
+    return null
+  }
+
+  const directPrefix = /^(\d{4}-\d{2}-\d{2})/.exec(raw.trim())?.[1]
+  if (directPrefix) {
+    return directPrefix
+  }
+
+  const parsed = Date.parse(raw)
+  if (Number.isNaN(parsed)) {
+    return null
+  }
+
+  return new Date(parsed).toISOString().slice(0, 10)
+}
+
+function sourcePublishedDatePrefixes(
+  event: CatalystResearch["events"][number],
+): Set<string> {
+  const prefixes = new Set<string>()
+
+  for (const source of event.sources) {
+    const prefix = isoDatePrefixFromRaw(source.publishedAt)
+    if (prefix) {
+      prefixes.add(prefix)
+    }
+  }
+
+  return prefixes
+}
+
+function isLikelySourcePublicationDateLeak(
+  event: CatalystResearch["events"][number],
+): boolean {
+  if (event.timingShape !== "point" || !event.expectedDate) {
+    return false
+  }
+
+  const expectedDate = isoDatePrefixFromRaw(event.expectedDate)
+  return expectedDate ? sourcePublishedDatePrefixes(event).has(expectedDate) : false
+}
+
+function isSamePointDate(
+  event: CatalystResearch["events"][number],
+  inferred: InferredTiming,
+): boolean {
+  if (inferred.timingShape !== "point") {
+    return false
+  }
+
+  return (
+    isoDatePrefixFromRaw(event.expectedDate) ===
+    isoDatePrefixFromRaw(inferred.expectedDate)
+  )
+}
+
+function isFutureInferredTiming(
+  inferred: InferredTiming,
+  researchRunDate: string,
+): boolean {
+  const anchor = parseAnchorDate(inferred)
+  const runDate = parseIsoPrefixToLocalDate(researchRunDate)
+
+  if (!anchor || !runDate) {
+    return false
+  }
+
+  return anchor.getTime() > runDate.getTime()
 }
 
 export function hasDisplayableTiming(
@@ -342,6 +433,17 @@ export function repairCatalystEventTiming(
   now: number = Date.now(),
 ): CatalystResearch["events"][number] {
   let working = upgradeContradictoryTimingShape(event)
+
+  if (isLikelySourcePublicationDateLeak(working)) {
+    const inferred = pickBestInferredTiming(working)
+    if (
+      inferred &&
+      !isSamePointDate(working, inferred) &&
+      isFutureInferredTiming(inferred, options.researchRunDate)
+    ) {
+      working = applyInferredTiming(working, inferred)
+    }
+  }
 
   if (needsTimingRepair(working, now)) {
     const inferred = pickBestInferredTiming(working)

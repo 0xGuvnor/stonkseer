@@ -89,6 +89,19 @@ describe("inferTimingFromEventText", () => {
     })
   })
 
+  test("parses the first month in a listed future window", () => {
+    const inferred = inferTimingFromEventText(
+      "The next realistic votes are scheduled for the July and October 2026 committee meetings.",
+    )
+
+    expect(inferred).toEqual({
+      timingShape: "period",
+      periodKey: "2026-07",
+      datePrecision: "month",
+      specificity: 62,
+    })
+  })
+
   test("returns null for text without anchors", () => {
     expect(inferTimingFromEventText("Strategic importance remains unclear.")).toBeNull()
   })
@@ -144,5 +157,63 @@ describe("repairCatalystEventTiming", () => {
     expect(repaired.periodKey).toBe("2026-07")
     expect(repaired.confidence).toBe(0.85)
     expect(repaired.status).toBe("confirmed")
+  })
+
+
+  test("repairs point timing that matches a source publication date", () => {
+    const event = baseEvent({
+      title: "EU Technical Committee Vote on Bloc-Wide Approval",
+      summary:
+        "Officials indicated the next realistic votes are scheduled for the July and October 2026 committee meetings.",
+      timingShape: "point",
+      expectedDate: "2026-06-30",
+      datePrecision: "exact",
+      sources: [
+        {
+          url: "https://example.com/story",
+          title: "Vote preview",
+          publisher: "example.com",
+          publishedAt: "2026-06-30",
+          quote:
+            "Officials indicated the next realistic votes are scheduled for the July and October 2026 meetings.",
+          supportsFields: ["summary", "timing"],
+        },
+      ],
+    })
+
+    const repaired = repairCatalystEventTiming(event, timingOptions, fixtureNow)
+
+    expect(repaired.timingShape).toBe("period")
+    expect(repaired.periodKey).toBe("2026-07")
+    expect(repaired.expectedDate).toBeUndefined()
+    expect(eventTimingLabel(repaired, fixtureNow)).toBe("July")
+  })
+
+  test("repairs publication-date timing from source quote anchors", () => {
+    const event = baseEvent({
+      title: "Quarterly Production and Deliveries Report",
+      summary: "The upcoming report is the next demand readout.",
+      timingShape: "point",
+      expectedDate: "2025-06-30",
+      datePrecision: "exact",
+      sources: [
+        {
+          url: "https://example.com/deliveries",
+          title: "Delivery preview",
+          publisher: "example.com",
+          publishedAt: "2025-06-30T14:00:00Z",
+          quote:
+            "The Q2 2026 production and deliveries report is expected in early July 2026.",
+          supportsFields: ["summary", "timing"],
+        },
+      ],
+    })
+
+    const repaired = repairCatalystEventTiming(event, timingOptions, fixtureNow)
+
+    expect(repaired.timingShape).toBe("period")
+    expect(repaired.periodKey).toBe("2026-07")
+    expect(repaired.timingQualifier).toBe("early")
+    expect(repaired.expectedDate).toBeUndefined()
   })
 })

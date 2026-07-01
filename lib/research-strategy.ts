@@ -1,1 +1,1 @@
-export const RESEARCH_STRATEGY_VERSION = "catalyst-timing-qualifier-v1"
+export const RESEARCH_STRATEGY_VERSION = "thread-coherence-filter-v1"

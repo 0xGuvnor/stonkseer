@@ -52,6 +52,7 @@ import {
 } from "../lib/research-followup"
 import { verifyAndFilterEvents } from "../lib/research-grounding"
 import { dedupeIntraRunCatalystEvents } from "../lib/research-inrun-dedupe"
+import { filterThreadCoherentCatalystEvents } from "../lib/research-thread-coherence"
 import {
   formatResearchCatalystThreadCoherenceBlock,
   formatResearchOccasionExtractionSelfCheck,
@@ -2296,11 +2297,18 @@ export const runResearch = internalAction({
         evidenceSnippets,
         seenUrls,
       )
-      let events = repairEventsTiming(verified.events, researchStartedAt)
+      const coherent = filterThreadCoherentCatalystEvents(verified.events)
+      const events = repairEventsTiming(coherent.events, researchStartedAt)
 
       if (verified.droppedCount > 0) {
         console.warn(
           `[stonkseer-research] Citation verify dropped ${verified.droppedCount} event(s) for ${run.symbol}: ${verified.dropReasons.join("; ")}`,
+        )
+      }
+
+      if (coherent.droppedCount > 0) {
+        console.warn(
+          `[stonkseer-research] Thread coherence dropped ${coherent.droppedCount} event(s) for ${run.symbol}: ${coherent.dropReasons.join("; ")}`,
         )
       }
 
@@ -2319,10 +2327,19 @@ export const runResearch = internalAction({
         gatewayCtx,
         symbol: run.symbol,
       })
-      const finalEvents = repairEventsTiming(
+      const finalCoherent = filterThreadCoherentCatalystEvents(
         finalDeduped.events,
+      )
+      const finalEvents = repairEventsTiming(
+        finalCoherent.events,
         researchStartedAt,
       )
+
+      if (finalCoherent.droppedCount > 0) {
+        console.warn(
+          `[stonkseer-research] Final thread coherence dropped ${finalCoherent.droppedCount} event(s) for ${run.symbol}: ${finalCoherent.dropReasons.join("; ")}`,
+        )
+      }
 
       if (deepRead.deepReadError) {
         console.warn(
