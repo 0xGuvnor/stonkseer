@@ -5,6 +5,7 @@ import {
   datePrecisionValidator,
   eventTypeValidator,
   expectedImpactValidator,
+  timingQualifierValidator,
   timingShapeValidator,
 } from "./schema"
 import type { Id } from "./_generated/dataModel"
@@ -99,6 +100,7 @@ const eventWithSourcesReturn = v.object({
   windowStart: v.optional(v.string()),
   windowEnd: v.optional(v.string()),
   periodKey: v.optional(v.string()),
+  timingQualifier: v.optional(timingQualifierValidator),
   timingShape: timingShapeValidator,
   datePrecision: datePrecisionValidator,
   confidence: v.number(),
@@ -117,6 +119,7 @@ const nextEventReturn = v.object({
   windowStart: v.optional(v.string()),
   windowEnd: v.optional(v.string()),
   periodKey: v.optional(v.string()),
+  timingQualifier: v.optional(timingQualifierValidator),
   timingShape: timingShapeValidator,
   datePrecision: datePrecisionValidator,
 })
@@ -336,6 +339,7 @@ export const getPortfolioPageData = query({
               windowStart: nearest.windowStart,
               windowEnd: nearest.windowEnd,
               periodKey: nearest.periodKey,
+              timingQualifier: nearest.timingQualifier,
               timingShape: nearest.timingShape,
               datePrecision: nearest.datePrecision,
             }

@@ -14,6 +14,8 @@ export function formatResearchCatalystThreadCoherenceBlock(): string {
     "Roundup articles can support multiple catalyst rows, but each row must stay on one catalyst thread.",
     "For each row, the title, timing fields, summary, whyItMatters, and cited sources must describe the same catalyst thread; do not take a title from one section and timing or summary from another.",
     "The facility or site named in the title must match the site discussed in summary and sources; if they differ, split into separate rows or fix the title — do not output one site in the title with another site only in the body.",
+    "Title and whyItMatters must address the same milestone — if whyItMatters discusses a different product, proceeding, or outcome than the title names, split rows or rewrite so they align.",
+    "Do not mix covered fiscal/report periods with publication timing: when a row is about a quarterly report or disclosure, title and summary name the covered period while timing fields anchor the expected release month or date — not the quarter being reported on.",
     "If a roundup source discusses unrelated catalysts, split them into separate rows with matching title, timing, summary, and source support; if a coherent row cannot be formed, omit it.",
     "Past dates are valid as timing only when they mark the start of an active ongoing catalyst; stale one-time events should be excluded or reframed around a source-backed future milestone.",
   ].join("\n")
@@ -29,6 +31,8 @@ export function formatResearchOccasionReportBlock(): string {
 export function formatResearchOccasionExtractionSelfCheck(): string {
   return [
     "Before returning JSON, merge rows that describe the same dated or named occasion — not only regulatory proceedings, investigations, or litigation.",
+    "Re-read each row: title, summary, whyItMatters, timing fields, and every cited source must support the same occasion; fix or split rows where title and whyItMatters disagree or where timing reflects a publication date but summary only names a covered fiscal quarter (or vice versa).",
     "If summary or sources name a month, quarter, year, or date range, timingShape must not be unknown.",
+    "Set timingQualifier to early, mid, or late only when sources explicitly use that coarse placement (e.g. early July, late Q4); otherwise null.",
   ].join(" ")
 }

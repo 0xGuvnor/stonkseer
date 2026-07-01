@@ -33,6 +33,7 @@ describe("normalizeDatePrecision", () => {
           windowStart: null,
           windowEnd: null,
           periodKey: "2026",
+          timingQualifier: null,
           datePrecision: "year",
           confidence: 0.6,
           status: "likely",

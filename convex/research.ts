@@ -10,6 +10,7 @@ import {
   eventTypeValidator,
   expectedImpactValidator,
   researchStatusValidator,
+  timingQualifierValidator,
   timingShapeValidator,
 } from "./schema"
 import {
@@ -100,6 +101,7 @@ const eventWithSourcesReturn = v.object({
   windowStart: v.optional(v.string()),
   windowEnd: v.optional(v.string()),
   periodKey: v.optional(v.string()),
+  timingQualifier: v.optional(timingQualifierValidator),
   timingShape: timingShapeValidator,
   datePrecision: datePrecisionValidator,
   confidence: v.number(),

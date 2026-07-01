@@ -83,8 +83,9 @@ describe("inferTimingFromEventText", () => {
     expect(inferred).toEqual({
       timingShape: "period",
       periodKey: "2026-07",
+      timingQualifier: "early",
       datePrecision: "month",
-      specificity: 60,
+      specificity: 65,
     })
   })
 
@@ -109,7 +110,7 @@ describe("repairCatalystEventTiming", () => {
     expect(repaired.windowStart).toBe("2026-07-01")
     expect(repaired.windowEnd).toBe("2026-12-31")
     expect(eventTimingLabel(repaired, fixtureNow)).toBe(
-      "1st Jul 2026 - 31st Dec 2026",
+      "1st Jul - 31st Dec",
     )
     expect(repaired.confidence).toBe(0.75)
     expect(repaired.status).toBe("likely")
@@ -126,7 +127,7 @@ describe("repairCatalystEventTiming", () => {
 
     expect(repaired.timingShape).toBe("period")
     expect(repaired.periodKey).toBe("2026-H2")
-    expect(eventTimingLabel(repaired, fixtureNow)).toBe("H2 2026")
+    expect(eventTimingLabel(repaired, fixtureNow)).toBe("H2")
   })
 
   test("does not alter events with displayable timing", () => {

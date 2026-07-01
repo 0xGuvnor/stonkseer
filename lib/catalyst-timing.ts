@@ -14,12 +14,38 @@ export const TIMING_SHAPES = [
 
 export type TimingShape = (typeof TIMING_SHAPES)[number]
 
+export const TIMING_QUALIFIER_VALUES = ["early", "mid", "late"] as const
+
+export type TimingQualifier = (typeof TIMING_QUALIFIER_VALUES)[number]
+
+/** Maps model synonyms onto coarse intra-period placement (early/mid/late). */
+export function normalizeTimingQualifier(
+  value: unknown,
+): TimingQualifier | undefined {
+  if (typeof value !== "string") {
+    return undefined
+  }
+
+  const normalized = value.trim().toLowerCase()
+
+  if (normalized === "middle") {
+    return "mid"
+  }
+
+  if ((TIMING_QUALIFIER_VALUES as readonly string[]).includes(normalized)) {
+    return normalized as TimingQualifier
+  }
+
+  return undefined
+}
+
 export type CatalystTimingFields = {
   timingShape: TimingShape
   expectedDate?: string
   windowStart?: string
   windowEnd?: string
   periodKey?: string
+  timingQualifier?: TimingQualifier
   datePrecision: string
 }
 
@@ -76,7 +102,7 @@ function ordinalSuffix(day: number): string {
   return "th"
 }
 
-function tryFormatIsoDatePrefix(raw: string): string | null {
+function parseIsoDateParts(raw: string): { year: number; month: number; day: number } | null {
   const s = raw.trim()
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
   if (!match) {
@@ -102,7 +128,23 @@ function tryFormatIsoDatePrefix(raw: string): string | null {
   ) {
     return null
   }
-  return `${day}${ordinalSuffix(day)} ${SHORT_MONTHS[d.getMonth()]} ${year}`
+  return { year, month, day }
+}
+
+function tryFormatIsoDatePrefix(raw: string): string | null {
+  const parts = parseIsoDateParts(raw)
+  if (!parts) {
+    return null
+  }
+  return `${parts.day}${ordinalSuffix(parts.day)} ${SHORT_MONTHS[parts.month - 1]} ${parts.year}`
+}
+
+function tryFormatTerseIsoDatePrefix(raw: string): string | null {
+  const parts = parseIsoDateParts(raw)
+  if (!parts) {
+    return null
+  }
+  return `${parts.day}${ordinalSuffix(parts.day)} ${SHORT_MONTHS[parts.month - 1]}`
 }
 
 function tryFormatIsoMonthPrefix(raw: string): string | null {
@@ -121,6 +163,47 @@ export function formatTimingFragment(raw: string): string {
     tryFormatIsoMonthPrefix(raw) ??
     raw.trim()
   )
+}
+
+export function formatTerseTimingFragment(raw: string): string {
+  return (
+    tryFormatTerseIsoDatePrefix(raw) ??
+    tryFormatIsoMonthPrefix(raw) ??
+    raw.trim()
+  )
+}
+
+function capitalizeTimingQualifier(qualifier: TimingQualifier): string {
+  return qualifier.charAt(0).toUpperCase() + qualifier.slice(1)
+}
+
+/** Table-friendly period label; year omitted for Q/H/month (Quarter column carries year). */
+export function formatPeriodTerseLabel(
+  periodKey: string,
+  timingQualifier?: TimingQualifier,
+): string | null {
+  const match = PERIOD_KEY_PATTERN.exec(periodKey.trim())
+  if (!match) {
+    return null
+  }
+
+  const year = Number(match[1])
+  const suffix = match[2]
+
+  if (!suffix) {
+    return String(year)
+  }
+
+  if (suffix.startsWith("Q") || suffix.startsWith("H")) {
+    return suffix
+  }
+
+  const month = Number(suffix)
+  const monthName = FULL_MONTHS[month - 1]
+  if (timingQualifier) {
+    return `${capitalizeTimingQualifier(timingQualifier)} ${monthName}`
+  }
+  return monthName
 }
 
 export function parseIsoPrefixToLocalDate(raw: string | undefined): Date | null {
@@ -289,13 +372,14 @@ function omitTimingFields(
   event: CatalystResearch["events"][number],
 ): Omit<
   CatalystResearch["events"][number],
-  "expectedDate" | "windowStart" | "windowEnd" | "periodKey"
+  "expectedDate" | "windowStart" | "windowEnd" | "periodKey" | "timingQualifier"
 > {
   const {
     expectedDate: _expectedDate,
     windowStart: _windowStart,
     windowEnd: _windowEnd,
     periodKey: _periodKey,
+    timingQualifier: _timingQualifier,
     ...rest
   } = event
   return rest
@@ -385,6 +469,18 @@ function coerceMonthOnlyWindowStart(
   }
 }
 
+function withPeriodQualifier<T extends CatalystResearch["events"][number]>(
+  event: CatalystResearch["events"][number],
+  fields: T,
+): T {
+  if (!fields.periodKey) {
+    return fields
+  }
+
+  const qualifier = normalizeTimingQualifier(event.timingQualifier)
+  return qualifier ? { ...fields, timingQualifier: qualifier } : fields
+}
+
 function coerceShapeFields(
   event: CatalystResearch["events"][number],
 ): CatalystResearch["events"][number] {
@@ -422,20 +518,20 @@ function coerceShapeFields(
         datePrecision: event.datePrecision,
       }
     case "period":
-      return {
+      return withPeriodQualifier(event, {
         ...base,
         timingShape: shape,
         periodKey: event.periodKey,
         datePrecision: event.datePrecision,
-      }
+      })
     case "open":
-      return {
+      return withPeriodQualifier(event, {
         ...base,
         timingShape: shape,
         ...(event.windowStart ? { windowStart: event.windowStart } : {}),
         ...(event.periodKey ? { periodKey: event.periodKey } : {}),
         datePrecision: event.datePrecision,
-      }
+      })
     case "unknown":
       return {
         ...base,
@@ -547,43 +643,53 @@ export function eventTimingLabel(
   event: CatalystTimingFields,
   now: number = Date.now(),
 ): string {
+  const qualifier = normalizeTimingQualifier(event.timingQualifier)
+
   switch (event.timingShape) {
     case "point":
       return event.expectedDate
-        ? formatTimingFragment(event.expectedDate)
+        ? formatTerseTimingFragment(event.expectedDate)
         : "Timing unknown"
     case "closed_window":
       if (event.windowStart && event.windowEnd) {
-        return `${formatTimingFragment(event.windowStart)} - ${formatTimingFragment(event.windowEnd)}`
+        return `${formatTerseTimingFragment(event.windowStart)} - ${formatTerseTimingFragment(event.windowEnd)}`
       }
       return "Timing unknown"
     case "from":
       return event.windowStart
-        ? `After ${formatTimingFragment(event.windowStart)}`
+        ? `After ${formatTerseTimingFragment(event.windowStart)}`
         : "Timing unknown"
     case "by":
       return event.windowEnd
-        ? `By ${formatTimingFragment(event.windowEnd)}`
+        ? `By ${formatTerseTimingFragment(event.windowEnd)}`
         : "Timing unknown"
     case "period": {
-      const parsed = event.periodKey ? parsePeriodKey(event.periodKey) : null
-      return parsed?.label ?? "Timing unknown"
+      if (!event.periodKey) {
+        return "Timing unknown"
+      }
+      return (
+        formatPeriodTerseLabel(event.periodKey, qualifier) ?? "Timing unknown"
+      )
     }
     case "open": {
       if (event.windowStart) {
         const start = parseIsoPrefixToLocalDate(event.windowStart)
         const prefix =
           start && isBeforeLocalDay(start, now) ? "Since" : "From"
-        return `${prefix} ${formatTimingFragment(event.windowStart)} (ongoing)`
+        return `${prefix} ${formatTerseTimingFragment(event.windowStart)} (ongoing)`
       }
-      const parsed = event.periodKey ? parsePeriodKey(event.periodKey) : null
-      if (parsed) {
-        const prefix = isBeforeLocalDay(parsed.anchorStart, now)
-          ? "Since"
-          : ""
-        return prefix
-          ? `${prefix} ${parsed.label} (ongoing)`
-          : `${parsed.label} (ongoing)`
+      if (event.periodKey) {
+        const parsed = parsePeriodKey(event.periodKey)
+        const terse =
+          formatPeriodTerseLabel(event.periodKey, qualifier) ?? event.periodKey
+        if (parsed) {
+          const prefix = isBeforeLocalDay(parsed.anchorStart, now)
+            ? "Since"
+            : ""
+          return prefix
+            ? `${prefix} ${terse} (ongoing)`
+            : `${terse} (ongoing)`
+        }
       }
       return "Ongoing"
     }

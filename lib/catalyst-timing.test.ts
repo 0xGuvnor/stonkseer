@@ -5,10 +5,13 @@ import {
   buildResearchHorizonEnd,
   buildResearchRunDate,
   eventTimingLabel,
+  formatPeriodTerseLabel,
+  formatTerseTimingFragment,
   formatTimingFragment,
   formatQuarterLabel,
   isWithinResearchHorizon,
   normalizeCatalystEventTiming,
+  normalizeTimingQualifier,
   parseAnchorDate,
   parseIsoPrefixToLocalDate,
   parsePeriodKey,
@@ -44,6 +47,42 @@ function normalizeOptions(now: number) {
     researchRunDate: buildResearchRunDate(now),
   }
 }
+
+describe("normalizeTimingQualifier", () => {
+  test("accepts early, mid, late", () => {
+    expect(normalizeTimingQualifier("early")).toBe("early")
+    expect(normalizeTimingQualifier("Mid")).toBe("mid")
+    expect(normalizeTimingQualifier("LATE")).toBe("late")
+  })
+
+  test("maps middle to mid and rejects unknown values", () => {
+    expect(normalizeTimingQualifier("middle")).toBe("mid")
+    expect(normalizeTimingQualifier("beginning")).toBeUndefined()
+    expect(normalizeTimingQualifier(null)).toBeUndefined()
+  })
+})
+
+describe("formatPeriodTerseLabel", () => {
+  test("omits year for quarter, half, and month periods", () => {
+    expect(formatPeriodTerseLabel("2026-Q3")).toBe("Q3")
+    expect(formatPeriodTerseLabel("2026-H2")).toBe("H2")
+    expect(formatPeriodTerseLabel("2026-07")).toBe("July")
+    expect(formatPeriodTerseLabel("2026-07", "early")).toBe("Early July")
+    expect(formatPeriodTerseLabel("2026-07", "mid")).toBe("Mid July")
+    expect(formatPeriodTerseLabel("2026-07", "late")).toBe("Late July")
+  })
+
+  test("keeps year-only periods as the year", () => {
+    expect(formatPeriodTerseLabel("2027")).toBe("2027")
+  })
+})
+
+describe("formatTerseTimingFragment", () => {
+  test("drops year from ISO dates", () => {
+    expect(formatTerseTimingFragment("2026-07-05")).toBe("5th Jul")
+    expect(formatTerseTimingFragment("2026-04")).toBe("April 2026")
+  })
+})
 
 describe("parsePeriodKey", () => {
   test("parses year", () => {
@@ -100,6 +139,34 @@ describe("normalizeCatalystEventTiming", () => {
     expect(normalized.timingShape).toBe("from")
     expect(normalized.windowStart).toBe("2025-07-01")
     expect(normalized.windowEnd).toBeUndefined()
+  })
+
+  test("preserves timingQualifier through normalization", () => {
+    const event: CatalystResearch["events"][number] = {
+      ...baseEventFields,
+      timingShape: "period",
+      periodKey: "2026-07",
+      timingQualifier: "early",
+      datePrecision: "month",
+    }
+
+    const normalized = normalizeCatalystEventTiming(event, options)
+
+    expect(normalized.timingQualifier).toBe("early")
+  })
+
+  test("drops timingQualifier from exact timing shapes", () => {
+    const event: CatalystResearch["events"][number] = {
+      ...baseEventFields,
+      timingShape: "point",
+      expectedDate: "2026-07-05",
+      timingQualifier: "early",
+      datePrecision: "exact",
+    }
+
+    const normalized = normalizeCatalystEventTiming(event, options)
+
+    expect(normalized.timingQualifier).toBeUndefined()
   })
 
   test("strips research horizon windowEnd and coerces to open when no start", () => {
@@ -202,7 +269,7 @@ describe("normalizeCatalystEventTiming", () => {
 })
 
 describe("eventTimingLabel", () => {
-  test("labels each timing shape", () => {
+  test("labels each timing shape with terse display", () => {
     expect(
       eventTimingLabel(
         {
@@ -212,7 +279,7 @@ describe("eventTimingLabel", () => {
         },
         fixtureNow,
       ),
-    ).toBe("12th Nov 2026")
+    ).toBe("12th Nov")
 
     expect(
       eventTimingLabel(
@@ -224,7 +291,7 @@ describe("eventTimingLabel", () => {
         },
         fixtureNow,
       ),
-    ).toBe("1st Mar 2026 - 31st May 2026")
+    ).toBe("1st Mar - 31st May")
 
     expect(
       eventTimingLabel(
@@ -235,7 +302,7 @@ describe("eventTimingLabel", () => {
         },
         fixtureNow,
       ),
-    ).toBe("After 15th Jan 2026")
+    ).toBe("After 15th Jan")
 
     expect(
       eventTimingLabel(
@@ -246,7 +313,7 @@ describe("eventTimingLabel", () => {
         },
         fixtureNow,
       ),
-    ).toBe("By 31st Dec 2026")
+    ).toBe("By 31st Dec")
 
     expect(
       eventTimingLabel(
@@ -257,7 +324,7 @@ describe("eventTimingLabel", () => {
         },
         fixtureNow,
       ),
-    ).toBe("Q3 2026")
+    ).toBe("Q3")
 
     expect(
       eventTimingLabel(
@@ -268,7 +335,7 @@ describe("eventTimingLabel", () => {
         },
         fixtureNow,
       ),
-    ).toBe("From 1st Apr 2026 (ongoing)")
+    ).toBe("From 1st Apr (ongoing)")
 
     expect(
       eventTimingLabel(
@@ -291,7 +358,7 @@ describe("eventTimingLabel", () => {
         },
         fixtureNow,
       ),
-    ).toBe("Since 1st Mar 2025 (ongoing)")
+    ).toBe("Since 1st Mar (ongoing)")
 
     expect(
       eventTimingLabel(
@@ -302,21 +369,41 @@ describe("eventTimingLabel", () => {
         },
         fixtureNow,
       ),
-    ).toBe("Since H1 2025 (ongoing)")
+    ).toBe("Since H1 (ongoing)")
   })
 
-  test("labels publication report release month", () => {
+  test("labels publication report release month with optional qualifier", () => {
     const event = {
       timingShape: "period" as const,
       periodKey: "2026-07",
       datePrecision: "month",
     }
 
-    expect(eventTimingLabel(event, fixtureNow)).toBe("July 2026")
+    expect(eventTimingLabel(event, fixtureNow)).toBe("July")
+
+    expect(
+      eventTimingLabel(
+        { ...event, timingQualifier: "early" },
+        fixtureNow,
+      ),
+    ).toBe("Early July")
 
     const anchor = parseSortAnchor(event, fixtureNow)
     expect(anchor).toEqual(new Date(2026, 6, 1))
     expect(anchor && formatQuarterLabel(anchor)).toBe("Q3 2026")
+  })
+
+  test("keeps year-only period labels", () => {
+    expect(
+      eventTimingLabel(
+        {
+          timingShape: "period",
+          periodKey: "2027",
+          datePrecision: "unknown",
+        },
+        fixtureNow,
+      ),
+    ).toBe("2027")
   })
 })
 

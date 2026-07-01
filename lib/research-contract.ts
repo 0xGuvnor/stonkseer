@@ -4,6 +4,7 @@ import {
   buildResearchHorizonEnd,
   buildResearchRunDate,
   normalizeCatalystEventTiming,
+  normalizeTimingQualifier,
 } from "./catalyst-timing"
 
 const MAX_EVENT_SUMMARY_CHARS = 360
@@ -154,6 +155,7 @@ export const catalystEventSchema = z.object({
   windowStart: z.string().optional(),
   windowEnd: z.string().optional(),
   periodKey: z.string().optional(),
+  timingQualifier: z.enum(["early", "mid", "late"]).optional(),
   datePrecision: datePrecisionSchema,
   confidence: z.number().min(0).max(1),
   status: z.enum(["confirmed", "likely", "speculative"]),
@@ -241,6 +243,12 @@ export const catalystEventAiSchema = z.object({
     .describe(
       "Fuzzy period YYYY, YYYY-Qn, YYYY-Hn, or YYYY-MM when timingShape is period or open, otherwise null. Canonical quarter form: 2026-Q2 (capital Q). Anchor when the catalyst happens: for 'Q2 2026 Vehicle Production & Deliveries Report' expected early July 2026, use 2026-07 (release month), not 2026-Q2 (covered quarter). Put the covered quarter in title/summary.",
     ),
+  timingQualifier: z
+    .enum(["early", "mid", "late"])
+    .nullable()
+    .describe(
+      "Optional coarse placement inside a month, quarter, half, or year when sources explicitly say early/mid/late (e.g. early July, mid-2026, late Q4). Null when not source-backed.",
+    ),
   datePrecision: datePrecisionAiSchema.describe(
     'Must be exactly one of: "exact", "month", "quarter", "half", "unknown". Do not use "year", "day", or other labels.',
   ),
@@ -282,6 +290,7 @@ export function normalizeCatalystResearchAi(
       : {}),
     ...(research.exchange !== null ? { exchange: research.exchange } : {}),
     events: research.events.map((event) => {
+      const timingQualifier = normalizeTimingQualifier(event.timingQualifier)
       const normalized = normalizeCatalystEventTiming(
         {
           title: event.title,
@@ -300,6 +309,7 @@ export function normalizeCatalystResearchAi(
             : {}),
           ...(event.windowEnd !== null ? { windowEnd: event.windowEnd } : {}),
           ...(event.periodKey !== null ? { periodKey: event.periodKey } : {}),
+          ...(timingQualifier ? { timingQualifier } : {}),
           datePrecision: event.datePrecision,
           confidence: event.confidence,
           status: event.status,

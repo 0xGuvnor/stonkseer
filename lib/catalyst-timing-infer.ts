@@ -1,6 +1,7 @@
 import {
   eventTimingLabel,
   normalizeCatalystEventTiming,
+  normalizeTimingQualifier,
   upgradeContradictoryTimingShape,
   type NormalizeCatalystTimingOptions,
 } from "./catalyst-timing"
@@ -13,6 +14,7 @@ export type InferredTiming = {
   windowStart?: string
   windowEnd?: string
   periodKey?: string
+  timingQualifier?: CatalystResearch["events"][number]["timingQualifier"]
   datePrecision: DatePrecision
   /** Higher = more specific / source-like anchor */
   specificity: number
@@ -120,9 +122,24 @@ function inferFromTextSegment(text: string): InferredTiming | null {
     }
   }
 
-  const monthYear = /\b(?:early|mid|late\s+)?([A-Za-z]+)\s+(\d{4})\b/i.exec(
-    normalized,
-  )
+  const monthWithQualifier =
+    /\b(early|mid|late)\s+([A-Za-z]+)\s+(\d{4})\b/i.exec(normalized)
+  if (monthWithQualifier) {
+    const monthNum = MONTH_NAME_TO_NUM[monthWithQualifier[2]!.toLowerCase()]
+    const year = Number(monthWithQualifier[3])
+    const qualifier = normalizeTimingQualifier(monthWithQualifier[1])
+    if (monthNum) {
+      return {
+        timingShape: "period",
+        periodKey: isoMonth(year, monthNum),
+        ...(qualifier ? { timingQualifier: qualifier } : {}),
+        datePrecision: "month",
+        specificity: 65,
+      }
+    }
+  }
+
+  const monthYear = /\b([A-Za-z]+)\s+(\d{4})\b/i.exec(normalized)
   if (monthYear) {
     const monthNum = MONTH_NAME_TO_NUM[monthYear[1]!.toLowerCase()]
     const year = Number(monthYear[2])
@@ -298,6 +315,7 @@ function applyInferredTiming(
       return {
         ...base,
         periodKey: inferred.periodKey,
+        timingQualifier: inferred.timingQualifier,
         expectedDate: undefined,
         windowStart: undefined,
         windowEnd: undefined,

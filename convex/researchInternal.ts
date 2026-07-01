@@ -6,6 +6,7 @@ import {
   datePrecisionValidator,
   eventTypeValidator,
   expectedImpactValidator,
+  timingQualifierValidator,
   timingShapeValidator,
 } from "./schema"
 import { RESEARCH_STRATEGY_VERSION } from "../lib/research-strategy"
@@ -43,6 +44,7 @@ const eventInput = v.object({
   windowStart: v.optional(v.string()),
   windowEnd: v.optional(v.string()),
   periodKey: v.optional(v.string()),
+  timingQualifier: v.optional(timingQualifierValidator),
   timingShape: timingShapeValidator,
   datePrecision: datePrecisionValidator,
   confidence: v.number(),
@@ -62,6 +64,7 @@ const priorCanonicalEventReturn = v.object({
   windowStart: v.optional(v.string()),
   windowEnd: v.optional(v.string()),
   periodKey: v.optional(v.string()),
+  timingQualifier: v.optional(timingQualifierValidator),
   timingShape: timingShapeValidator,
   datePrecision: datePrecisionValidator,
   confidence: v.number(),
@@ -167,6 +170,7 @@ export const getPriorCanonicalEvents = internalQuery({
       windowStart: event.windowStart,
       windowEnd: event.windowEnd,
       periodKey: event.periodKey,
+      timingQualifier: event.timingQualifier,
       timingShape: event.timingShape,
       datePrecision: event.datePrecision,
       confidence: event.confidence,

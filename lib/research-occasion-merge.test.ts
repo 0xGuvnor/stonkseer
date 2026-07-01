@@ -6,6 +6,7 @@ import {
   formatResearchOccasionMergeBlock,
   formatResearchOccasionReportBlock,
 } from "./research-occasion-merge"
+import { formatResearchTimingExtractionBlock } from "./research-themes"
 
 describe("formatResearchOccasionMergeBlock", () => {
   test("uses occasion-general merge language", () => {
@@ -27,6 +28,8 @@ describe("formatResearchCatalystThreadCoherenceBlock", () => {
     expect(block).toContain("title, timing fields, summary")
     expect(block).toContain("do not take a title from one section")
     expect(block).toContain("facility or site named in the title")
+    expect(block).toContain("Title and whyItMatters must address the same milestone")
+    expect(block).toContain("Do not mix covered fiscal/report periods")
   })
 
   test("allows ongoing starts without stale one-time events", () => {
@@ -55,5 +58,16 @@ describe("formatResearchOccasionExtractionSelfCheck", () => {
     expect(block).toContain("same dated or named occasion")
     expect(block).toContain("not only regulatory proceedings")
     expect(block).toContain("timingShape must not be unknown")
+    expect(block).toContain("title and whyItMatters disagree")
+    expect(block).toContain("timingQualifier")
+  })
+})
+
+describe("formatResearchTimingExtractionBlock", () => {
+  test("documents timingQualifier extraction", () => {
+    const block = formatResearchTimingExtractionBlock()
+
+    expect(block).toContain("timingQualifier early, mid, or late")
+    expect(block).toContain("early July 2026")
   })
 })

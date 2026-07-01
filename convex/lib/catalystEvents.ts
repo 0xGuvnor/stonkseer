@@ -5,6 +5,7 @@ import type {
   datePrecisionValidator,
   eventTypeValidator,
   expectedImpactValidator,
+  timingQualifierValidator,
   timingShapeValidator,
 } from "../schema"
 import type { Infer } from "convex/values"
@@ -18,6 +19,7 @@ export type CatalystEventInput = {
   windowStart?: string
   windowEnd?: string
   periodKey?: string
+  timingQualifier?: Infer<typeof timingQualifierValidator>
   timingShape: Infer<typeof timingShapeValidator>
   datePrecision: Infer<typeof datePrecisionValidator>
   confidence: number
@@ -87,6 +89,7 @@ export async function insertCatalystEventsForStock(
       windowStart: event.windowStart,
       windowEnd: event.windowEnd,
       periodKey: event.periodKey,
+      timingQualifier: event.timingQualifier,
       timingShape: event.timingShape,
       datePrecision: event.datePrecision,
       confidence: event.confidence,

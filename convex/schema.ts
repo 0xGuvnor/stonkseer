@@ -33,6 +33,12 @@ export const timingShapeValidator = v.union(
   v.literal("unknown"),
 )
 
+export const timingQualifierValidator = v.union(
+  v.literal("early"),
+  v.literal("mid"),
+  v.literal("late"),
+)
+
 export const catalystStatusValidator = v.union(
   v.literal("confirmed"),
   v.literal("likely"),
@@ -216,6 +222,7 @@ export default defineSchema({
     windowStart: v.optional(v.string()),
     windowEnd: v.optional(v.string()),
     periodKey: v.optional(v.string()),
+    timingQualifier: v.optional(timingQualifierValidator),
     timingShape: timingShapeValidator,
     datePrecision: datePrecisionValidator,
     confidence: v.number(),

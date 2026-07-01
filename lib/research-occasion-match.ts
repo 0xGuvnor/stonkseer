@@ -353,6 +353,7 @@ function pickTimingFieldsFromMerge(
   | "windowStart"
   | "windowEnd"
   | "periodKey"
+  | "timingQualifier"
   | "expectedDate"
   | "datePrecision"
 > {
@@ -365,6 +366,7 @@ function pickTimingFieldsFromMerge(
       windowStart: primary.windowStart,
       windowEnd: primary.windowEnd,
       periodKey: primary.periodKey,
+      timingQualifier: primary.timingQualifier,
       expectedDate: primary.expectedDate,
       datePrecision: primary.datePrecision,
     }
@@ -376,6 +378,7 @@ function pickTimingFieldsFromMerge(
       windowStart: secondary.windowStart,
       windowEnd: secondary.windowEnd,
       periodKey: secondary.periodKey,
+      timingQualifier: secondary.timingQualifier,
       expectedDate: secondary.expectedDate,
       datePrecision: secondary.datePrecision,
     }
@@ -386,6 +389,7 @@ function pickTimingFieldsFromMerge(
     windowStart: primary.windowStart ?? secondary.windowStart,
     windowEnd: primary.windowEnd ?? secondary.windowEnd,
     periodKey: primary.periodKey ?? secondary.periodKey,
+    timingQualifier: primary.timingQualifier ?? secondary.timingQualifier,
     expectedDate: primary.expectedDate ?? secondary.expectedDate,
     datePrecision: primary.datePrecision,
   }

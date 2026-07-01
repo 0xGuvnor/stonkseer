@@ -1,1 +1,1 @@
-export const RESEARCH_STRATEGY_VERSION = "open-occasion-dedupe-v1"
+export const RESEARCH_STRATEGY_VERSION = "catalyst-timing-qualifier-v1"
