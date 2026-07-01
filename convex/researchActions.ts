@@ -2183,10 +2183,17 @@ export const runResearch = internalAction({
       return null
     }
 
+    const pipelineStartedAt = Date.now()
+    const queueWaitMs = pipelineStartedAt - run.startedAt
+
     await ctx.runMutation(internal.researchInternal.markStarted, {
       runId: args.runId,
       model: process.env.AI_GATEWAY_MODEL,
     })
+
+    console.log(
+      `[stonkseer-research] Fresh run started for ${run.symbol} (runId=${args.runId}, source=${run.source}, queueWaitMs=${queueWaitMs})`,
+    )
 
     try {
       warnHostedSearchAndGatewayEnvGaps()
@@ -2376,13 +2383,26 @@ export const runResearch = internalAction({
         events: stripReconcileMetadata(finalEvents),
         model: process.env.AI_GATEWAY_MODEL ?? "deterministic-finnhub-snippets",
       })
+
+      const pipelineDurationMs = Date.now() - pipelineStartedAt
+      const totalDurationMs = Date.now() - run.startedAt
+      console.log(
+        `[stonkseer-research] Fresh run completed for ${run.symbol} (runId=${args.runId}, source=${run.source}, pipelineDurationMs=${pipelineDurationMs}, totalDurationMs=${totalDurationMs}, eventCount=${finalEvents.length})`,
+      )
     } catch (error) {
+      const pipelineDurationMs = Date.now() - pipelineStartedAt
+      const totalDurationMs = Date.now() - run.startedAt
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Research failed for an unknown reason"
+      console.log(
+        `[stonkseer-research] Fresh run failed for ${run.symbol} (runId=${args.runId}, source=${run.source}, pipelineDurationMs=${pipelineDurationMs}, totalDurationMs=${totalDurationMs}, error=${errorMessage})`,
+      )
+
       await ctx.runMutation(internal.researchInternal.markFailed, {
         runId: args.runId,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Research failed for an unknown reason",
+        error: errorMessage,
       })
     }
 
