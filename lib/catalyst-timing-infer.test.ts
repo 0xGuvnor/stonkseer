@@ -253,4 +253,70 @@ describe("repairCatalystEventTiming", () => {
       "July",
     )
   })
+
+  test("repairs unsupported future point timing when event text names a broader catalyst month", () => {
+    const event = baseEvent({
+      title: "Technical Committee Approval Vote",
+      summary:
+        "Officials indicated the next realistic votes are scheduled for the July and October 2026 committee meetings.",
+      timingShape: "point",
+      expectedDate: "2026-07-15",
+      datePrecision: "exact",
+      sources: [
+        {
+          url: "https://example.com/vote-preview",
+          title: "Vote preview",
+          publisher: "example.com",
+          quote:
+            "The next realistic votes are scheduled for July and October 2026.",
+          supportsFields: ["summary", "timing"],
+        },
+      ],
+    })
+
+    const repaired = repairCatalystEventTiming(
+      event,
+      {
+        researchHorizonEnd: "2027-07-01",
+        researchRunDate: "2026-07-01",
+      },
+      Date.parse("2026-07-01T12:00:00Z"),
+    )
+
+    expect(repaired.timingShape).toBe("period")
+    expect(repaired.periodKey).toBe("2026-07")
+    expect(repaired.expectedDate).toBeUndefined()
+  })
+
+  test("keeps exact point timing when event text states the date", () => {
+    const event = baseEvent({
+      title: "Technical Committee Approval Vote",
+      summary:
+        "Officials scheduled the approval vote for July 15, 2026 after earlier committee review.",
+      timingShape: "point",
+      expectedDate: "2026-07-15",
+      datePrecision: "exact",
+      sources: [
+        {
+          url: "https://example.com/vote-date",
+          title: "Vote date",
+          publisher: "example.com",
+          quote: "The vote is scheduled for July 15, 2026.",
+          supportsFields: ["summary", "timing"],
+        },
+      ],
+    })
+
+    const repaired = repairCatalystEventTiming(
+      event,
+      {
+        researchHorizonEnd: "2027-07-01",
+        researchRunDate: "2026-07-01",
+      },
+      Date.parse("2026-07-01T12:00:00Z"),
+    )
+
+    expect(repaired.timingShape).toBe("point")
+    expect(repaired.expectedDate).toBe("2026-07-15")
+  })
 })

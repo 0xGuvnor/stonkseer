@@ -165,6 +165,37 @@ describe("scoreOccasionPair", () => {
     expect(scoreOccasionPair(broad, narrow).kind).toBe("strong")
   })
 
+  test("matches contained periods with lower title overlap when product and site overlap", () => {
+    const broad = baseEvent({
+      title: "Gen 3 pilot build start at Fremont",
+      summary:
+        "The company plans a Gen 3 humanoid pilot build at Fremont before year-end 2026.",
+      timingShape: "period",
+      periodKey: "2026-H2",
+      datePrecision: "half",
+    })
+
+    const narrow = baseEvent({
+      title: "Fremont humanoid line July ramp",
+      summary:
+        "The Fremont line for the Gen 3 humanoid program is listed for July 2026.",
+      timingShape: "period",
+      periodKey: "2026-07",
+      datePrecision: "month",
+      sources: [
+        {
+          url: "https://example.com/source-b",
+          title: "Source B",
+          publisher: "example.com",
+          quote: "Fremont Gen 3 humanoid ramp in July 2026.",
+          supportsFields: ["summary", "periodKey"],
+        },
+      ],
+    })
+
+    expect(scoreOccasionPair(broad, narrow).kind).toBe("strong")
+  })
+
   test("keeps separate unrelated products in the same half", () => {
     const battery = baseEvent({
       title: "Grid Battery 3 production start",

@@ -114,6 +114,23 @@ describe("filterThreadCoherentCatalystEvents", () => {
     expect(result.dropReasons[0]).toContain("title timing conflicts")
   })
 
+  test("drops production rows whose title capacity conflicts with summary capacity", () => {
+    const result = filterThreadCoherentCatalystEvents([
+      baseEvent({
+        title:
+          "Regional Plant production ramp to about 6,200 vehicles per week",
+        summary:
+          "The company plans to raise output to 7,500 vehicles per week in the same ramp window.",
+        whyItMatters:
+          "A concrete throughput increase supports regional utilization.",
+        eventType: "corporate",
+      }),
+    ])
+
+    expect(result.events).toHaveLength(0)
+    expect(result.dropReasons[0]).toContain("title capacity conflicts")
+  })
+
   test("drops production rows whose title program is absent from summary and why", () => {
     const result = filterThreadCoherentCatalystEvents([
       baseEvent({
@@ -122,6 +139,26 @@ describe("filterThreadCoherentCatalystEvents", () => {
           "The new Houston-area energy storage factory is slated to begin battery block deliveries in the second half of 2026.",
         whyItMatters:
           "Reaching meaningful weekly volumes would show that the robotaxi fleet strategy is moving from concept to scale.",
+        eventType: "product",
+        timingShape: "period",
+        periodKey: "2026-H2",
+        timingQualifier: undefined,
+        datePrecision: "half",
+      }),
+    ])
+
+    expect(result.events).toHaveLength(0)
+    expect(result.dropReasons[0]).toContain("title program is absent")
+  })
+
+  test("drops production rows when title and body overlap only on issuer tokens", () => {
+    const result = filterThreadCoherentCatalystEvents([
+      baseEvent({
+        title: "Example Motors Commercial Truck Production Ramp at Nevada Factory",
+        summary:
+          "Example Motors plans energy storage block deliveries from a Houston-area factory in H2 2026.",
+        whyItMatters:
+          "Example Motors could use the launch to diversify revenue away from vehicles.",
         eventType: "product",
         timingShape: "period",
         periodKey: "2026-H2",

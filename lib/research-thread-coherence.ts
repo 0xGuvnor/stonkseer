@@ -21,6 +21,9 @@ const EARNINGS_THREAD_PATTERN =
 const PRODUCTION_RAMP_TITLE_PATTERN =
   /\b(?:production|ramp|output|capacity|factory|plant|gigafactory|megafactory|deliveries|launch|start)\b/i
 
+const CAPACITY_PATTERN =
+  /\b(?:about|around|roughly|~)?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(gwh|mwh|vehicles?\s+per\s+week|units?\s+per\s+week|trucks?\s+per\s+year|vehicles?\s+per\s+year|units?\s+per\s+year)\b/gi
+
 const MONTH_PATTERN =
   /\b(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b/gi
 
@@ -125,14 +128,45 @@ function hasTokenOverlap(a: Set<string>, b: Set<string>): boolean {
   return false
 }
 
-function normalizedTokens(text: string): Set<string> {
-  return new Set(
+function normalizedTokenList(text: string): string[] {
+  return (
     text
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, " ")
       .split(/\s+/)
-      .filter((token) => token.length > 3 && !THREAD_TOKEN_STOPWORDS.has(token)),
+      .filter((token) => token.length > 3 && !THREAD_TOKEN_STOPWORDS.has(token))
   )
+}
+
+function normalizedTokens(text: string): Set<string> {
+  return new Set(normalizedTokenList(text))
+}
+
+function titleThreadTokens(title: string): Set<string> {
+  const tokens = normalizedTokenList(title)
+
+  if (tokens.length >= 4) {
+    return new Set(tokens.slice(2))
+  }
+
+  return new Set(tokens)
+}
+
+function normalizedCapacity(value: string, unit: string): string {
+  const number = Number(value.replace(/,/g, ""))
+  const normalizedUnit = unit.toLowerCase().replace(/\s+/g, " ").trim()
+
+  return `${number}:${normalizedUnit}`
+}
+
+function capacityTokensIn(text: string): Set<string> {
+  const tokens = new Set<string>()
+
+  for (const match of text.matchAll(CAPACITY_PATTERN)) {
+    tokens.add(normalizedCapacity(match[1]!, match[2]!))
+  }
+
+  return tokens
 }
 
 function isVehicleReportTitle(title: string): boolean {
@@ -209,12 +243,27 @@ function hasTitleTimingMismatch(event: CatalystEvent): boolean {
   return !hasTokenOverlap(titleMonths, summaryMonths)
 }
 
+function hasTitleCapacityMismatch(event: CatalystEvent): boolean {
+  if (!PRODUCTION_RAMP_TITLE_PATTERN.test(event.title)) {
+    return false
+  }
+
+  const titleCapacities = capacityTokensIn(event.title)
+  const summaryCapacities = capacityTokensIn(event.summary)
+
+  if (titleCapacities.size === 0 || summaryCapacities.size === 0) {
+    return false
+  }
+
+  return !hasTokenOverlap(titleCapacities, summaryCapacities)
+}
+
 function hasTitleProgramAbsentFromBody(event: CatalystEvent): boolean {
   if (!PRODUCTION_RAMP_TITLE_PATTERN.test(event.title)) {
     return false
   }
 
-  const titleTokens = normalizedTokens(event.title)
+  const titleTokens = titleThreadTokens(event.title)
   const bodyTokens = normalizedTokens(`${event.summary} ${event.whyItMatters}`)
 
   if (titleTokens.size === 0 || bodyTokens.size === 0) {
@@ -288,6 +337,10 @@ function incoherenceReason(event: CatalystEvent): string | null {
 
   if (hasTitleTimingMismatch(event)) {
     return `${eventLabel(event)}: title timing conflicts with summary timing`
+  }
+
+  if (hasTitleCapacityMismatch(event)) {
+    return `${eventLabel(event)}: title capacity conflicts with summary capacity`
   }
 
   if (hasTitleProgramAbsentFromBody(event)) {

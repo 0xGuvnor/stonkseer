@@ -248,6 +248,28 @@ function hasPeriodKeyMatch(a: CatalystEvent, b: CatalystEvent): boolean {
   )
 }
 
+function hasContainedPeriodKey(a: CatalystEvent, b: CatalystEvent): boolean {
+  if (!a.periodKey || !b.periodKey || a.periodKey === b.periodKey) {
+    return false
+  }
+
+  const periodA = parsePeriodKey(a.periodKey)
+  const periodB = parsePeriodKey(b.periodKey)
+
+  if (!periodA || !periodB) {
+    return false
+  }
+
+  const aContainsB =
+    periodA.anchorStart.getTime() <= periodB.anchorStart.getTime() &&
+    periodA.anchorEnd.getTime() >= periodB.anchorEnd.getTime()
+  const bContainsA =
+    periodB.anchorStart.getTime() <= periodA.anchorStart.getTime() &&
+    periodB.anchorEnd.getTime() >= periodA.anchorEnd.getTime()
+
+  return aContainsB || bContainsA
+}
+
 function isAmbiguousTitleOverlap(titleOverlap: number): boolean {
   return (
     titleOverlap >= AI_REVIEW_TITLE_JACCARD_MIN &&
@@ -314,6 +336,18 @@ export function scoreOccasionPair(
     hasPeriodKeyMatch(a, b) &&
     (combinedOverlap >= COMBINED_JACCARD_STRONG_THRESHOLD ||
       titleOverlap >= AI_REVIEW_TITLE_JACCARD_MIN)
+  ) {
+    return {
+      score: STRONG_MATCH_SCORE + combinedOverlap * 10,
+      kind: "strong",
+    }
+  }
+
+  if (
+    hasContainedPeriodKey(a, b) &&
+    hasCompatibleEventType(a, b) &&
+    titleOverlap >= 0.1 &&
+    combinedOverlap >= 0.2
   ) {
     return {
       score: STRONG_MATCH_SCORE + combinedOverlap * 10,

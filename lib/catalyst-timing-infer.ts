@@ -293,6 +293,42 @@ function isLikelySourcePublicationDateLeak(
   return expectedDate ? sourcePublishedDatePrefixes(event).has(expectedDate) : false
 }
 
+function textContainsExpectedDate(
+  event: CatalystResearch["events"][number],
+): boolean {
+  if (!event.expectedDate) {
+    return false
+  }
+
+  const parts = parseIsoPrefixToLocalDate(event.expectedDate)
+  if (!parts) {
+    return false
+  }
+
+  const year = parts.getFullYear()
+  const month = parts.getMonth() + 1
+  const day = parts.getDate()
+  const monthNames = Object.entries(MONTH_NAME_TO_NUM)
+    .filter(([, value]) => value === month)
+    .map(([name]) => name)
+  const text = collectEventTextSegments(event)
+    .map((segment) => segment.text)
+    .join(" ")
+    .toLowerCase()
+
+  if (event.expectedDate && text.includes(event.expectedDate.toLowerCase())) {
+    return true
+  }
+
+  return monthNames.some((name) => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    return (
+      new RegExp(`\\b${escaped}\\s+${day}(?:st|nd|rd|th)?(?:,)?\\s+${year}\\b`, "i").test(text) ||
+      new RegExp(`\\b${day}(?:st|nd|rd|th)?\\s+${escaped}\\s+${year}\\b`, "i").test(text)
+    )
+  })
+}
+
 function isStalePointDate(
   event: CatalystResearch["events"][number],
   researchRunDate: string,
@@ -309,6 +345,14 @@ function isStalePointDate(
   }
 
   return expectedDate.getTime() < runDate.getTime()
+}
+
+function isUnsupportedPointDate(event: CatalystResearch["events"][number]): boolean {
+  return (
+    event.timingShape === "point" &&
+    event.expectedDate !== undefined &&
+    !textContainsExpectedDate(event)
+  )
 }
 
 function isSamePointDate(
@@ -454,7 +498,8 @@ export function repairCatalystEventTiming(
 
   if (
     isLikelySourcePublicationDateLeak(working) ||
-    isStalePointDate(working, options.researchRunDate)
+    isStalePointDate(working, options.researchRunDate) ||
+    isUnsupportedPointDate(working)
   ) {
     const inferred = pickBestInferredTiming(working)
     if (
