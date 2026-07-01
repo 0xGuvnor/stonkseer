@@ -134,6 +134,37 @@ describe("scoreOccasionPair", () => {
     expect(result.score).toBeGreaterThanOrEqual(3)
   })
 
+  test("allows narrower month timing to match broader half-year timing", () => {
+    const broad = baseEvent({
+      title: "Humanoid Robot Gen 3 Pilot Production Start at Fremont",
+      summary:
+        "The company plans to start pilot production of the Gen 3 humanoid robot before year-end 2026.",
+      timingShape: "period",
+      periodKey: "2026-H2",
+      datePrecision: "half",
+    })
+
+    const narrow = baseEvent({
+      title: "Humanoid Robot Gen 3 Production Start at Fremont",
+      summary:
+        "Pilot production of the Gen 3 humanoid robot is listed for July 2026.",
+      timingShape: "period",
+      periodKey: "2026-07",
+      datePrecision: "month",
+      sources: [
+        {
+          url: "https://example.com/source-b",
+          title: "Source B",
+          publisher: "example.com",
+          quote: "Pilot production in July 2026.",
+          supportsFields: ["summary", "periodKey"],
+        },
+      ],
+    })
+
+    expect(scoreOccasionPair(broad, narrow).kind).toBe("strong")
+  })
+
   test("keeps separate unrelated products in the same half", () => {
     const battery = baseEvent({
       title: "Grid Battery 3 production start",

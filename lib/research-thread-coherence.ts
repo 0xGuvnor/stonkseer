@@ -18,6 +18,47 @@ const VEHICLE_REPORT_BODY_PATTERN =
 const EARNINGS_THREAD_PATTERN =
   /\b(?:earnings\s+(?:release|date|calendar|call|conference)|conference call|after market close|after market|wall street horizon|finnhub(?:'s)? earnings calendar|eps|free-cash-flow)\b/i
 
+const PRODUCTION_RAMP_TITLE_PATTERN =
+  /\b(?:production|ramp|output|capacity|factory|plant|gigafactory|megafactory|deliveries|launch|start)\b/i
+
+const MONTH_PATTERN =
+  /\b(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b/gi
+
+const THREAD_TOKEN_STOPWORDS = new Set([
+  "about",
+  "annual",
+  "approval",
+  "battery",
+  "bloc",
+  "commercial",
+  "company",
+  "deliveries",
+  "delivery",
+  "energy",
+  "factory",
+  "giga",
+  "gigafactory",
+  "global",
+  "launch",
+  "market",
+  "megafactory",
+  "model",
+  "plant",
+  "production",
+  "ramp",
+  "regional",
+  "report",
+  "results",
+  "scaling",
+  "start",
+  "system",
+  "update",
+  "vehicle",
+  "vehicles",
+  "volume",
+  "weekly",
+])
+
 const AGENCY_TOKENS = [
   "nhtsa",
   "sec",
@@ -57,7 +98,41 @@ function extractQuarterKeys(text: string): Set<string> {
     keys.add(`${match[2]}-Q${match[1]}`)
   }
 
+  for (const match of text.matchAll(/\bq([1-4])[^0-9]{1,24}(\d{4})\b/gi)) {
+    keys.add(`${match[2]}-Q${match[1]}`)
+  }
+
   return keys
+}
+
+function monthTokensIn(text: string): Set<string> {
+  const tokens = new Set<string>()
+
+  for (const match of text.matchAll(MONTH_PATTERN)) {
+    tokens.add(match[0]!.slice(0, 3).toLowerCase())
+  }
+
+  return tokens
+}
+
+function hasTokenOverlap(a: Set<string>, b: Set<string>): boolean {
+  for (const token of a) {
+    if (b.has(token)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function normalizedTokens(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((token) => token.length > 3 && !THREAD_TOKEN_STOPWORDS.has(token)),
+  )
 }
 
 function isVehicleReportTitle(title: string): boolean {
@@ -102,6 +177,51 @@ function hasVehicleReportQuarterMismatch(event: CatalystEvent): boolean {
   }
 
   return true
+}
+
+function hasEarningsQuarterMismatch(event: CatalystEvent): boolean {
+  if (event.eventType !== "earnings" && !hasEarningsThread(event.title)) {
+    return false
+  }
+
+  const titleQuarters = extractQuarterKeys(event.title)
+  const bodyQuarters = extractQuarterKeys(combinedBodyText(event))
+
+  if (titleQuarters.size === 0 || bodyQuarters.size === 0) {
+    return false
+  }
+
+  return !hasTokenOverlap(titleQuarters, bodyQuarters)
+}
+
+function hasTitleTimingMismatch(event: CatalystEvent): boolean {
+  if (!PRODUCTION_RAMP_TITLE_PATTERN.test(event.title)) {
+    return false
+  }
+
+  const titleMonths = monthTokensIn(event.title)
+  const summaryMonths = monthTokensIn(event.summary)
+
+  if (titleMonths.size === 0 || summaryMonths.size === 0) {
+    return false
+  }
+
+  return !hasTokenOverlap(titleMonths, summaryMonths)
+}
+
+function hasTitleProgramAbsentFromBody(event: CatalystEvent): boolean {
+  if (!PRODUCTION_RAMP_TITLE_PATTERN.test(event.title)) {
+    return false
+  }
+
+  const titleTokens = normalizedTokens(event.title)
+  const bodyTokens = normalizedTokens(`${event.summary} ${event.whyItMatters}`)
+
+  if (titleTokens.size === 0 || bodyTokens.size === 0) {
+    return false
+  }
+
+  return !hasTokenOverlap(titleTokens, bodyTokens)
 }
 
 function agencyTokensIn(text: string): Set<string> {
@@ -160,6 +280,18 @@ function incoherenceReason(event: CatalystEvent): string | null {
 
   if (hasVehicleReportQuarterMismatch(event)) {
     return `${eventLabel(event)}: vehicle production/delivery report covered quarter conflicts with summary`
+  }
+
+  if (hasEarningsQuarterMismatch(event)) {
+    return `${eventLabel(event)}: earnings quarter conflicts with summary`
+  }
+
+  if (hasTitleTimingMismatch(event)) {
+    return `${eventLabel(event)}: title timing conflicts with summary timing`
+  }
+
+  if (hasTitleProgramAbsentFromBody(event)) {
+    return `${eventLabel(event)}: title program is absent from summary and whyItMatters`
   }
 
   if (hasAgencyProceedingMismatch(event)) {

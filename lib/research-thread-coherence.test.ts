@@ -77,6 +77,63 @@ describe("filterThreadCoherentCatalystEvents", () => {
     expect(result.dropReasons[0]).toContain("covered quarter conflicts")
   })
 
+  test("drops earnings rows whose reported quarter conflicts with summary", () => {
+    const result = filterThreadCoherentCatalystEvents([
+      baseEvent({
+        title: "Q1 2027 Earnings Release & Conference Call",
+        summary:
+          "The Q4/full-year 2026 earnings call is forecast for late January 2027.",
+        whyItMatters:
+          "Full-year earnings include capex, factory-ramp, and software-monetization commentary.",
+        eventType: "earnings",
+        timingShape: "point",
+        expectedDate: "2027-04-20",
+        periodKey: undefined,
+        timingQualifier: undefined,
+        datePrecision: "exact",
+      }),
+    ])
+
+    expect(result.events).toHaveLength(0)
+    expect(result.dropReasons[0]).toContain("earnings quarter conflicts")
+  })
+
+  test("drops production rows whose title month conflicts with body timing", () => {
+    const result = filterThreadCoherentCatalystEvents([
+      baseEvent({
+        title: "Regional Plant production ramp to about 6,200 vehicles per week in July",
+        summary:
+          "The company plans to raise output to 7,500 vehicles per week starting in October 2026.",
+        whyItMatters:
+          "A concrete throughput increase supports regional utilization.",
+        eventType: "corporate",
+      }),
+    ])
+
+    expect(result.events).toHaveLength(0)
+    expect(result.dropReasons[0]).toContain("title timing conflicts")
+  })
+
+  test("drops production rows whose title program is absent from summary and why", () => {
+    const result = filterThreadCoherentCatalystEvents([
+      baseEvent({
+        title: "Commercial Truck Volume Production Ramp at Nevada Factory",
+        summary:
+          "The new Houston-area energy storage factory is slated to begin battery block deliveries in the second half of 2026.",
+        whyItMatters:
+          "Reaching meaningful weekly volumes would show that the robotaxi fleet strategy is moving from concept to scale.",
+        eventType: "product",
+        timingShape: "period",
+        periodKey: "2026-H2",
+        timingQualifier: undefined,
+        datePrecision: "half",
+      }),
+    ])
+
+    expect(result.events).toHaveLength(0)
+    expect(result.dropReasons[0]).toContain("title program is absent")
+  })
+
   test("drops agency proceeding rows whose summary describes a different body", () => {
     const result = filterThreadCoherentCatalystEvents([
       baseEvent({

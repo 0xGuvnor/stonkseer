@@ -1,4 +1,4 @@
-import { eventTimingLabel } from "./catalyst-timing"
+import { eventTimingLabel, parsePeriodKey } from "./catalyst-timing"
 import type { CatalystResearch } from "./research-contract"
 import { normalizeSourceUrl } from "./research-source-url"
 
@@ -152,7 +152,23 @@ export function hasConflictingTimingAnchors(
     b.periodKey !== undefined &&
     a.periodKey !== b.periodKey
   ) {
-    return true
+    const periodA = parsePeriodKey(a.periodKey)
+    const periodB = parsePeriodKey(b.periodKey)
+
+    if (!periodA || !periodB) {
+      return true
+    }
+
+    const aContainsB =
+      periodA.anchorStart.getTime() <= periodB.anchorStart.getTime() &&
+      periodA.anchorEnd.getTime() >= periodB.anchorEnd.getTime()
+    const bContainsA =
+      periodB.anchorStart.getTime() <= periodA.anchorStart.getTime() &&
+      periodB.anchorEnd.getTime() >= periodA.anchorEnd.getTime()
+
+    if (!aContainsB && !bContainsA) {
+      return true
+    }
   }
 
   if (

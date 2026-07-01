@@ -293,6 +293,24 @@ function isLikelySourcePublicationDateLeak(
   return expectedDate ? sourcePublishedDatePrefixes(event).has(expectedDate) : false
 }
 
+function isStalePointDate(
+  event: CatalystResearch["events"][number],
+  researchRunDate: string,
+): boolean {
+  if (event.timingShape !== "point" || !event.expectedDate) {
+    return false
+  }
+
+  const expectedDate = parseIsoPrefixToLocalDate(event.expectedDate)
+  const runDate = parseIsoPrefixToLocalDate(researchRunDate)
+
+  if (!expectedDate || !runDate) {
+    return false
+  }
+
+  return expectedDate.getTime() < runDate.getTime()
+}
+
 function isSamePointDate(
   event: CatalystResearch["events"][number],
   inferred: InferredTiming,
@@ -318,7 +336,7 @@ function isFutureInferredTiming(
     return false
   }
 
-  return anchor.getTime() > runDate.getTime()
+  return anchor.getTime() >= runDate.getTime()
 }
 
 export function hasDisplayableTiming(
@@ -434,7 +452,10 @@ export function repairCatalystEventTiming(
 ): CatalystResearch["events"][number] {
   let working = upgradeContradictoryTimingShape(event)
 
-  if (isLikelySourcePublicationDateLeak(working)) {
+  if (
+    isLikelySourcePublicationDateLeak(working) ||
+    isStalePointDate(working, options.researchRunDate)
+  ) {
     const inferred = pickBestInferredTiming(working)
     if (
       inferred &&

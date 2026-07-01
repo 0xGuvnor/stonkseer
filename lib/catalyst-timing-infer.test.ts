@@ -216,4 +216,41 @@ describe("repairCatalystEventTiming", () => {
     expect(repaired.timingQualifier).toBe("early")
     expect(repaired.expectedDate).toBeUndefined()
   })
+
+  test("repairs stale point timing when event text names the current catalyst month", () => {
+    const event = baseEvent({
+      title: "Technical Committee Approval Vote",
+      summary:
+        "Officials indicated the next realistic votes are scheduled for the July and October 2026 committee meetings.",
+      timingShape: "point",
+      expectedDate: "2026-06-30",
+      datePrecision: "exact",
+      sources: [
+        {
+          url: "https://example.com/vote-preview",
+          title: "Vote preview",
+          publisher: "example.com",
+          quote:
+            "The next realistic votes are scheduled for July and October 2026.",
+          supportsFields: ["summary", "timing"],
+        },
+      ],
+    })
+
+    const repaired = repairCatalystEventTiming(
+      event,
+      {
+        researchHorizonEnd: "2027-07-01",
+        researchRunDate: "2026-07-01",
+      },
+      Date.parse("2026-07-01T12:00:00Z"),
+    )
+
+    expect(repaired.timingShape).toBe("period")
+    expect(repaired.periodKey).toBe("2026-07")
+    expect(repaired.expectedDate).toBeUndefined()
+    expect(eventTimingLabel(repaired, Date.parse("2026-07-01T12:00:00Z"))).toBe(
+      "July",
+    )
+  })
 })
